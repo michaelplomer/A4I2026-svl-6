@@ -20,6 +20,11 @@ from google.adk.agents import Agent
 
 from .bigquery_mcp import bigquery_mcp
 from .data_tools import DATA_TOOLS, PROJECT
+from .hydration_tools import HYDRATION_TOOLS
+from .live_tools import LIVE_TOOLS
+from .model_tools import MODEL_TOOLS
+from .ops_tools import OPS_TOOLS
+from .toolbox_mcp import toolbox_mcp
 from .ui_tools import UI_TOOLS
 
 MODEL = os.environ.get("HEAT_AGENT_MODEL", "gemini-2.5-flash")
@@ -92,5 +97,9 @@ root_agent = Agent(
     model=MODEL,
     description="HeatRx: answers city planners' questions about street-level heat in Brooklyn.",
     instruction=INSTRUCTION,
-    tools=[*DATA_TOOLS, bigquery_mcp, *UI_TOOLS],
+    tools=[
+        *DATA_TOOLS, bigquery_mcp, *UI_TOOLS,
+        *OPS_TOOLS, *LIVE_TOOLS, *MODEL_TOOLS, *HYDRATION_TOOLS,
+        *([toolbox_mcp] if toolbox_mcp is not None else []),
+    ],
 )

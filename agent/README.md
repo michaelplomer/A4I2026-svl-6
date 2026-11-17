@@ -104,3 +104,56 @@ and arguments in `HANDLERS` in `ui_tools.js`.** `GET /api/chat/contract` lists t
 The agent also sees what the planner sees: every message carries the current view, map
 layer, selected block and map centre, stored in session state as `ui_context` and pulled into
 the instruction via `{ui_context?}`. So "this block" just works.
+
+## Added on branch `Dhinakar`: tracks, Placement Recommendation, MCP Toolbox, team mode
+
+### New tools (`ops_tools.py`)
+
+| Tool | Track | Answers |
+|---|---|---|
+| `dispatch_plan(forecast_high_f, n_trucks, stops_per_truck, area)` | ⚡ Today | Stops ranked by (forecast + offset − 90°F) × (65+ + no-car households) × confidence, ≥ 400 m apart, grouped into one zone per truck with a Google Maps route link. Re-call with fewer trucks → `what_changed` |
+| `get_forecast()` | ⚡ Today | NWS daytime highs for Brooklyn (live, public domain) |
+| `replacement_priority(area, n)` | 🌳 Decade | Dead trees and stumps (existing pits) on hot, exposed blocks, **exact coordinates + address** from the 2015 census |
+| `rank_planting_sites(area, n)` | 🌳 Decade | Hot, exposed blocks with no street tree within 100 m |
+| `inspect_site(lat, lon)` | 🌳 Decade | Street View + Gemini vision: shade, surfaces, empty pit / sidewalk room (needs `GOOGLE_MAPS_API_KEY`) |
+| `placement_recommendation(track, cells?)` | both | The deliverable: site cards with **live `ML.EXPLAIN_PREDICT`** contributions split into physical drivers vs. location context, candidate action, hot days, residents, tree pits, limitations. Uses the session's last list if `cells` is omitted |
+
+All read `a4i_grid` through `data_tools._query` (parameterized, 256 MB / 20 s caps, read-only).
+Actions are recommended only from physical drivers (trees, open space, housing density), never
+from `nbr_offset_1km` or water share, and no cooling effect is ever forecast.
+
+### Second MCP server: MCP Toolbox for Databases
+
+`toolbox/tools.yaml` defines five shaped queries (`block_profile`, `neighborhood_summary`,
+`council_district_summary`, `trees_near_point`, `citywide_heat_history`). Deploy it once:
+
+```bash
+bash agent/toolbox/deploy.sh          # private Cloud Run service, min-instances=1
+export TOOLBOX_URL=<printed URL>      # or --update-env-vars on the portal service
+```
+
+The agent attaches it with `McpToolset` (`toolbox_mcp.py`, ID-token auth). With `TOOLBOX_URL`
+unset it is skipped and everything else works as before.
+
+| Requirement | Now |
+|---|---|
+| Consume a managed MCP server | Google's BigQuery MCP server **and** MCP Toolbox on Cloud Run |
+| A tool we defined | `data_tools.py`, `ops_tools.py`, and the 5 Toolbox SQL tools |
+
+### Team mode (optional)
+
+`HEAT_AGENT_MODE=team` swaps the single agent for a router (`heat_planner`) with
+`dispatch_agent` (Today) and `planning_agent` (Decade, with a `council_skeptic` reviewer).
+Every agent keeps the map tools. The default single agent is unchanged.
+
+### Try it
+
+```bash
+cd agent && ../portal/.venv/bin/adk web
+```
+
+> "Thursday is 102°F and I have 4 trucks, where should they go?" → "Truck 2 broke down" →
+> "Which dead trees should Parks replace first in Brownsville?" → "Build the placement
+> recommendation and audit it."
+
+Planning docs: `docs/heatrx/` (agent plan v4, agent context, 20 test questions).

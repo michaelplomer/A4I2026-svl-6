@@ -1,0 +1,133 @@
+# MCP Toolbox for Databases: HeatRx's own parameterized BigQuery tools.
+# Served over MCP by the heatrx-toolbox Cloud Run service (agent/toolbox/deploy.sh) and consumed
+# by the agent through agent/heat_agent/toolbox_mcp.py (TOOLBOX_URL).
+# deploy.sh replaces __PROJECT__ with the project id.
+# Format: classic sources / tools / toolsets. If your Toolbox version rejects it, see
+# https://googleapis.github.io/genai-toolbox/ (same fields, newer layout).
+sources:
+  heatrx-bq:
+    kind: bigquery
+    project: __PROJECT__
+    location: US
+
+tools:
+  block_profile:
+    kind: bigquery-sql
+    source: heatrx-bq
+    description: >
+      One Brooklyn block (0.001-degree cell containing the point): heat offset (F vs campaign
+      average), confidence, estimated hot days per year, street trees, residents 65+, households
+      without a car, neighbourhood, council district, nearest street address.
+    parameters:
+      - {name: lat, type: float, description: Latitude in decimal degrees}
+      - {name: lon, type: float, description: Longitude in decimal degrees (negative)}
+    statement: |
+      SELECT p.cell_i, p.cell_j, pl.neighborhood, pl.council_district, pl.street_address,
+             ROUND(p.offset_best_f, 2) AS offset_f, p.confidence,
+             ROUND(p.est_days_ge_95_per_year, 1) AS est_days_ge_95_per_year, p.trees_100m,
+             ROUND(p.est_residents) AS residents, ROUND(p.est_residents_65_plus) AS residents_65_plus,
+             ROUND(p.est_households_no_car) AS households_no_car
+      FROM `__PROJECT__.a4i_grid.cell_profile_full` p
+      LEFT JOIN `__PROJECT__.a4i_grid.cell_places` pl USING (cell_i, cell_j)
+      WHERE p.cell_i = CAST(FLOOR(@lat / 0.001) AS INT64)
+        AND p.cell_j = CAST(FLOOR(@lon / 0.001) AS INT64)
+
+  neighborhood_summary:
+    kind: bigquery-sql
+    source: heatrx-bq
+    description: >
+      Heat and exposure for a Brooklyn neighbourhood (2015 NTA name, partial match, e.g.
+      'Brownsville'): land blocks, measured / predicted blocks, mean and max offset, residents,
+      65+, households without a car, dead trees and stumps.
+    parameters:
+      - {name: neighborhood, type: string, description: Neighbourhood name or part of it}
+    statement: |
+      SELECT ANY_VALUE(pl.neighborhood) AS neighborhood, COUNT(*) AS land_blocks,
+             COUNTIF(p.confidence = 'measured') AS measured_blocks,
+             COUNTIF(p.confidence = 'near_data') AS predicted_blocks,
+             ROUND(AVG(IF(p.confidence IN ('measured','near_data'), p.offset_best_f, NULL)), 2) AS mean_offset_f,
+             ROUND(MAX(IF(p.confidence IN ('measured','near_data'), p.offset_best_f, NULL)), 2) AS max_offset_f,
+             ROUND(SUM(p.est_residents)) AS residents,
+             ROUND(SUM(p.est_residents_65_plus)) AS residents_65_plus,
+             ROUND(SUM(p.est_households_no_car)) AS households_no_car
+      FROM `__PROJECT__.a4i_grid.cell_profile_full` p
+      JOIN `__PROJECT__.a4i_grid.cell_places` pl USING (cell_i, cell_j)
+      WHERE p.is_land AND p.borough = 'Brooklyn'
+        AND LOWER(pl.neighborhood) LIKE CONCAT('%', LOWER(@neighborhood), '%')
+
+  council_district_summary:
+    kind: bigquery-sql
+    source: heatrx-bq
+    description: >
+      "Is my district on the list?": heat and exposure for a Brooklyn council district plus its
+      5 hottest measured-or-predicted blocks with near-addresses.
+    parameters:
+      - {name: district, type: integer, description: NYC council district number, e.g. 41}
+    statement: |
+      WITH d AS (
+        SELECT p.*, pl.street_address, pl.neighborhood
+        FROM `__PROJECT__.a4i_grid.cell_profile_full` p
+        JOIN `__PROJECT__.a4i_grid.cell_places` pl USING (cell_i, cell_j)
+        WHERE p.is_land AND p.borough = 'Brooklyn' AND pl.council_district = CAST(@district AS STRING)
+      )
+      SELECT
+        (SELECT AS STRUCT COUNT(*) AS land_blocks,
+                ROUND(AVG(IF(confidence IN ('measured','near_data'), offset_best_f, NULL)), 2) AS mean_offset_f,
+                ROUND(SUM(est_residents)) AS residents,
+                ROUND(SUM(est_residents_65_plus)) AS residents_65_plus,
+                ROUND(SUM(est_households_no_car)) AS households_no_car FROM d) AS summary,
+        ARRAY(SELECT AS STRUCT FORMAT('%d,%d', cell_i, cell_j) AS cell, street_address, neighborhood,
+                     ROUND(offset_best_f, 2) AS offset_f, confidence
+              FROM d WHERE confidence IN ('measured','near_data')
+              ORDER BY offset_best_f DESC LIMIT 5) AS hottest_blocks
+
+  trees_near_point:
+    kind: bigquery-sql
+    source: heatrx-bq
+    description: >
+      2015 NYC street-tree census within a radius of a point, counted by status (Alive, Dead,
+      Stump) and health. Historical inventory, not current canopy.
+    parameters:
+      - {name: lat, type: float, description: Latitude}
+      - {name: lon, type: float, description: Longitude}
+      - {name: radius_m, type: integer, description: Radius in metres, up to 500}
+    statement: |
+      SELECT status, health, COUNT(*) AS trees
+      FROM `__PROJECT__.nyc_trees.tree_census_2015`
+      WHERE ST_DWITHIN(ST_GEOGPOINT(longitude, latitude), ST_GEOGPOINT(@lon, @lat), LEAST(@radius_m, 500))
+      GROUP BY status, health
+      ORDER BY trees DESC
+
+  citywide_heat_history:
+    kind: bigquery-sql
+    source: heatrx-bq
+    description: Observed city reference days per year at or above 90, 95 and 100 F (2019-2025).
+    parameters: []
+    statement: |
+      SELECT * FROM `__PROJECT__.a4i_grid.city_heat_history` ORDER BY year
+
+  hydration_deployments:
+    kind: bigquery-sql
+    source: heatrx-bq
+    description: >
+      Stored hydration-truck deployments (hydration_results.daily_truck_deployment) for a date
+      ('YYYY-MM-DD'): truck, k-means zone (cluster_id), street address, predicted temperature,
+      priority score and status, highest priority first.
+    parameters:
+      - {name: deployment_date, type: string, description: Date as YYYY-MM-DD}
+    statement: |
+      SELECT truck_number, cluster_id, street_address, ROUND(predicted_temp_f, 1) AS predicted_temp_f,
+             ROUND(hydration_priority_score, 3) AS hydration_priority_score, deployment_status
+      FROM `__PROJECT__.hydration_results.daily_truck_deployment`
+      WHERE CAST(deployment_date AS STRING) = @deployment_date
+      ORDER BY hydration_priority_score DESC
+      LIMIT 50
+
+toolsets:
+  heatrx:
+    - block_profile
+    - neighborhood_summary
+    - council_district_summary
+    - trees_near_point
+    - citywide_heat_history
+    - hydration_deployments
