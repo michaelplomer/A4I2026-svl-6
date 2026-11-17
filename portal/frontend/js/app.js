@@ -1,7 +1,7 @@
 // App shell: top navigation, a tiny hash router (#/map, #/today, ...) and the right-hand
 // side panel (Assistant | Layers | Block tabs).
 import { api } from "./api.js";
-import { initMapView, showLayer, resizeMap, getMapContext } from "./map.js";
+import { initMapView, showLayer, resizeMap, getMapContext, showLocations, focusCell } from "./map.js";
 import { renderView } from "./views.js";
 import { initChat, askAgent } from "./chat.js";
 import { configureUiTools } from "./ui_tools.js";
@@ -99,6 +99,8 @@ async function route() {
   setMapTabs(false);
   await renderView(els.generic, view, questions, {
     onShowLayer: async (layer) => { go("map"); await ensureMap(); showLayer(layer); },
+    onShowLocations: async (locations, label) => { go("map"); await ensureMap(); showLocations(locations, label); },
+    onFocusCell: async (i, j) => { go("map"); await ensureMap(); focusCell(i, j); },
   });
 }
 

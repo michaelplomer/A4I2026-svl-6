@@ -204,7 +204,8 @@ table.data th { font-size: .75rem; color: var(--muted); font-weight: 600; }
   .side-panel { width: 100%; flex: 1; border-left: 0; border-top: 1px solid var(--border); }
   .legend { left: 8px; bottom: 12px; width: min(190px, calc(100% - 16px)); }
   .view-generic { padding: 16px; }
-  
+}
+
 /* ---------- model: categorical legend, confidence flags, "why" bars ---------- */
 .legend-cat { display: flex; align-items: center; gap: 6px; font-size: .78rem; margin: 3px 0; }
 .legend-cat .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
@@ -237,3 +238,46 @@ table.data th { font-size: .75rem; color: var(--muted); font-weight: 600; }
 .exposure th { font-weight: 600; color: var(--muted); text-align: right; padding: 2px 4px; }
 .exposure td { text-align: right; padding: 2px 4px; border-top: 1px solid var(--border); }
 .exposure td:first-child, .exposure th:first-child { text-align: left; }
+
+/* ---------- data views: Today, Decade, Equity, History ---------- */
+.view-body { max-width: 1100px; margin-bottom: 26px; }
+.view-body h3 { margin: 22px 0 6px; }
+.view-body h3:first-child { margin-top: 0; }
+.small { font-size: .8rem; }
+.link-btn.small { padding: 2px 7px; font-size: .74rem; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 10px 0; }
+.controls label { color: var(--muted); font-size: .85rem; display: flex; gap: 6px; align-items: center; }
+.controls select {
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px;
+  background: var(--surface); color: var(--text); font: inherit;
+}
+.fc-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 8px; }
+.fc-day {
+  flex: 0 0 auto; min-width: 104px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 8px 10px;
+}
+.fc-day.hot { border-color: var(--accent); background: var(--accent-soft); }
+.fc-name { font-size: .75rem; color: var(--muted); }
+.fc-high { font-size: 1.25rem; font-weight: 700; }
+.fc-desc { font-size: .72rem; color: var(--muted); max-width: 120px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin: 12px 0; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+.stat-v { font-size: 1.5rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.stat-l { font-size: .8rem; color: var(--muted); }
+.table-scroll { max-width: 100%; overflow-x: auto; }
+table.data td.left { text-align: left; }
+table.data td, table.data th { white-space: nowrap; }
+.view-body table.data { margin-bottom: 6px; }
+.two-col { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.why.wide { max-width: 620px; }
+.why.wide .why-row { grid-template-columns: 1fr 200px 58px; font-size: .85rem; }
+.hist-chart { width: 100%; max-width: 560px; display: block; }
+.hist-chart .b90 { fill: #f4a582; }
+.hist-chart .b95 { fill: #b2182b; }
+.hist-chart .v, .hist-chart .t { font-size: 10px; text-anchor: middle; fill: var(--muted); }
+.hist-chart .axis { stroke: var(--border); }
+.chart-key { font-size: .78rem; color: var(--muted); margin: 2px 0 10px; display: flex; gap: 6px; align-items: center; }
+.chart-key span { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.chart-key .k90 { background: #f4a582; } .chart-key .k95 { background: #b2182b; margin-left: 10px; }
+@media (max-width: 760px) { .two-col { grid-template-columns: 1fr; } }
+table.data td.block { text-align: left; white-space: normal; min-width: 180px; line-height: 1.25; }

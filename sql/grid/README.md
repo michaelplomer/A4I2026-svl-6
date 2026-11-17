@@ -98,7 +98,7 @@ Cleaning decisions are in the header of each SQL file. The ones worth knowing:
 
 - `11_cell_places.sql` → `cell_places`: neighbourhood (NTA), council district, zip code,
   community board and nearest street address per cell, voted by the 2015 street trees within
-  150 m. Labels 16,732 of 17,752 Brooklyn land cells (94%). Approximate near boundaries,
+  150 m; plus counts of live, poor, dead trees and stumps inside the cell (planting sites). Labels 16,732 of 17,752 Brooklyn land cells (94%). Approximate near boundaries,
   2015 lines (NTAs redrawn 2020, council districts 2023), addresses read as "near".
 - `12_cell_agent_view.sql` → view `cell_agent_view`: one flat row per cell for the agent
   (`cell_id`, location, place names, `heat_offset_f`, `campaign_afternoon_temp_f` = campaign mean ~90.1 °F +

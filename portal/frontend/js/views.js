@@ -1,6 +1,7 @@
 // Non-map views. Each is generated from the persona catalogue (/api/personas): the questions
 // it will answer, how far the data gets us today, and what's left to build.
 import { api } from "./api.js";
+import { BODIES } from "./views_data.js";
 
 export const STATUS = {
   ready: "Ready now",
@@ -11,27 +12,23 @@ export const STATUS = {
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-// What each view still needs built. Names match the tools in the planning sheet.
-const TODO = {
+// How each view's numbers are made. Shown above the view's tables.
+const METHOD = {
   today: {
-    title: "To build: dispatch_plan",
-    body: "Rank cells by predicted offset × residents 65+ × households without a car, then split them into one zone per truck or team (KMEANS). Show the ranked stops, and the zones on the map.",
+    title: "How this list is made",
+    body: "Take the hottest quarter of populated blocks (offset vs. the city average: measured where a Heat Watch car drove, predicted elsewhere), then rank them by the people least able to cope: residents 65+ plus households without a car. Estimated high = the city high you pick + the block's offset. A ranked list, not a truck route.",
   },
   decade: {
-    title: "To build: explain_heat and rank_interventions",
-    body: "Turn ML.EXPLAIN_PREDICT attributions into “+1.2°F from waterfront distance, −0.4°F from trees”. Rank blocks by the cause a city can change, and compare two blocks side by side.",
+    title: "How these lists are made",
+    body: "Planting priority: hot blocks (hottest quarter) with fewer street trees than the Brooklyn median, ranked by heat × residents. Ready planting sites: dead trees and stumps from the 2015 street tree census inside hot blocks. The model's tree effect is small and is an association from one afternoon, not a measured cooling effect.",
   },
   equity: {
-    title: "To build: equity_audit",
-    body: "Take the recommended cells, look up their tracts, and compare them with the Brooklyn baseline below. Race is used only here, after the fact, never as a model input.",
+    title: "How the audit works",
+    body: "Every number is resident-weighted over grid blocks (ACS 2019 5-year, block group and tract). The recommendation columns are exactly the lists on the Today and Decade pages. Demographics are never model inputs, so this check isn't circular. Race isn't in the snapshot yet.",
   },
   history: {
-    title: "Next: dangerous days for every block",
-    body: "Estimated days per block (city reference high + the block's offset) exist for driven blocks; see the “Estimated days ≥ 95°F” map layer. Unmeasured blocks get them once the model predicts their offset.",
-  },
-  ask: {
-    title: "To build: connect the ADK agent",
-    body: "POST /api/ask currently returns 501. Point it at the deployed agent (Agent Runtime or Cloud Run) and stream the reply here.",
+    title: "How these numbers are made",
+    body: "City: days the average high of Central Park, LaGuardia and JFK crossed each threshold. Per block: that daily high + the block's offset, assuming the offset holds on every hot day. Seven years is too short to call a trend.",
   },
 };
 
@@ -56,46 +53,11 @@ function questionCards(questions) {
 }
 
 function todoBlock(id) {
-  const t = TODO[id];
+  const t = METHOD[id];
   return t ? `<div class="todo"><h3>${t.title}</h3><div class="muted">${t.body}</div></div>` : "";
 }
 
-// ---------------------------------------------------------------- view-specific bodies
-async function historyBody() {
-  const { station, years } = await api.heatDays();
-  return `
-    <h3>Days per year at or above each threshold</h3>
-    <p class="muted">${esc(station)}. Seven years is too short to call a trend.</p>
-    <table class="data">
-      <thead><tr><th>Year</th><th>≥ 90°F</th><th>≥ 95°F</th><th>≥ 100°F</th><th>Peak</th></tr></thead>
-      <tbody>${years.map((y) => `<tr><td>${y.year}</td><td>${y.days_90}</td><td>${y.days_95}</td>
-        <td>${y.days_100}</td><td>${y.peak_f.toFixed(0)}°F</td></tr>`).join("")}</tbody>
-    </table>`;
-}
-
-async function equityBody() {
-  const tracts = (await api.tracts()).features.map((f) => f.properties).filter((p) => p.borough === "Brooklyn");
-  const pop = tracts.reduce((s, t) => s + (t.total_pop || 0), 0);
-  const sum = (k) => tracts.reduce((s, t) => s + (t[k] || 0), 0);
-  const wavg = (k) => {
-    let num = 0, den = 0;
-    tracts.forEach((t) => { if (typeof t[k] === "number" && t.total_pop) { num += t[k] * t.total_pop; den += t.total_pop; } });
-    return den ? num / den : null;
-  };
-  const rows = [
-    ["Residents", pop.toLocaleString()],
-    ["Aged 65+", `${((sum("pop_65_plus") / pop) * 100).toFixed(1)}%`],
-    ["Households without a car", `${((sum("no_cars") / sum("households")) * 100).toFixed(1)}%`],
-    ["Poverty rate (population-weighted)", `${(wavg("poverty_rate") * 100).toFixed(1)}%`],
-    ["Median income (population-weighted tract median)", `$${Math.round(wavg("median_income")).toLocaleString()}`],
-  ];
-  return `
-    <h3>Brooklyn baseline</h3>
-    <p class="muted">${tracts.length} Brooklyn tracts in the grid · ACS 2019 5-year. The audit compares recommended tracts against these.</p>
-    <table class="data"><thead><tr><th>Measure</th><th>Brooklyn</th><th>Recommended</th></tr></thead>
-      <tbody>${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td><td class="muted">—</td></tr>`).join("")}</tbody>
-    </table>`;
-}
+// View-specific bodies live in views_data.js.
 
 function askBody(prefill) {
   return `
@@ -122,11 +84,15 @@ function wireAsk(root) {
 }
 
 // ---------------------------------------------------------------- public
-export async function renderView(root, view, questions, { onShowLayer, prefill } = {}) {
+export async function renderView(root, view, questions, opts = {}) {
+  const { onShowLayer, prefill } = opts;
   const mine = questions.filter((q) => q.view === view.id);
+  const B = BODIES[view.id];
   let body = "";
-  if (view.id === "history") body = await historyBody();
-  if (view.id === "equity") body = await equityBody();
+  if (B) {
+    try { body = await B.html(); }
+    catch (e) { body = `<div class="flag warn">Couldn't load the data for this view: ${esc(e.message)}</div>`; }
+  }
   if (view.id === "ask") body = askBody(prefill);
 
   root.innerHTML = `
@@ -136,10 +102,11 @@ export async function renderView(root, view, questions, { onShowLayer, prefill }
       ${mine.length ? coverageChips(mine) : ""}
     </div>
     ${todoBlock(view.id)}
-    ${body ? `<div style="max-width:980px;margin-bottom:22px">${body}</div>` : ""}
+    ${body ? `<div class="view-body">${body}</div>` : ""}
     ${mine.length ? `<h2>Questions this view answers</h2>${questionCards(mine)}` : ""}`;
 
   root.querySelectorAll("[data-layer]").forEach((b) =>
     b.addEventListener("click", () => onShowLayer?.(b.dataset.layer)));
   wireAsk(root);
+  B?.wire?.(root, opts);
 }

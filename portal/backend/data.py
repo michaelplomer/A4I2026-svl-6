@@ -44,7 +44,13 @@ CELL_COLUMNS = [
     "bg_renter_share", "bg_severe_rent_burden_rate", "bg_pop_per_km2",
     "tract_no_vehicle_rate", "tract_poverty_rate",
     "est_residents", "est_residents_65_plus", "est_households_no_car",
+    # place names and tree health from the 2015 tree census (cell_places, sql/grid/11)
+    "neighborhood", "council_district", "street_address",
+    "trees_alive", "trees_poor", "trees_dead", "stumps",
 ]
+
+PLACE_COLUMNS = {"neighborhood", "council_district", "street_address",
+                 "trees_alive", "trees_poor", "trees_dead", "stumps"}
 
 TRACT_COLUMNS = [
     "geo_id", "borough", "tract_name", "total_pop", "pop_65_plus", "share_65_plus",
@@ -89,13 +95,14 @@ def refresh() -> None:
     g = f"`{config.PROJECT_ID}.{config.GRID_DATASET}`"
 
     extras = {"heat_index_offset_f": "h", "n_readings": "h", "holdout": "h",
-              "trend_days_ge_95_per_year": "s"}
+              "trend_days_ge_95_per_year": "s", **{c: "pl" for c in PLACE_COLUMNS}}
     select = ", ".join(f"{extras.get(c, 'f')}.{c}" for c in CELL_COLUMNS)
     rows = _query(f"""
         SELECT {select}, f.attributions
         FROM {g}.cell_profile_full f
         LEFT JOIN {g}.cell_heat h USING (cell_i, cell_j)
         LEFT JOIN {g}.cell_heat_summary s USING (cell_i, cell_j)
+        LEFT JOIN {g}.cell_places pl USING (cell_i, cell_j)
     """)
     # attributions: per cell, [[feature, contribution in F], ...] largest first (land cells only)
     cells = {
@@ -113,6 +120,7 @@ def refresh() -> None:
     ev = _query(f"SELECT * FROM {g}.model_evaluation")[0]
     imp = _query(f"""SELECT feature, attribution FROM ML.GLOBAL_EXPLAIN(MODEL {g}.heat_offset_v1)
                      ORDER BY attribution DESC""")
+    weights = _query(f"SELECT processed_input, weight FROM ML.WEIGHTS(MODEL {g}.heat_offset_v1)")
     MODEL_FILE.write_text(json.dumps({
         "model": ev["model"],
         "holdout_cells": ev["holdout_cells"],
@@ -122,6 +130,8 @@ def refresh() -> None:
         "mae_reduction_vs_baseline": _clean(ev["mae_reduction_vs_baseline"]),
         # 5-fold block cross-validation, from sql/model/cross_validate.sh (see sql/model/README.md)
         "cv": {"mae_f": 0.82, "r2_mean": 0.32, "r2_worst_fold": 0.22, "baseline_mae_f": 1.04},
+        # linear coefficients, degrees F per unit of each input (the Decade view uses the tree terms)
+        "weights": {r["processed_input"]: r["weight"] for r in weights},
         "importance": [{"feature": r["feature"], "importance": _clean(r["attribution"])} for r in imp],
     }, separators=(",", ":")))
     print(f"model card -> {MODEL_FILE}")

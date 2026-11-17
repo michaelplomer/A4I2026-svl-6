@@ -8,6 +8,9 @@
 --   street_address   address of the single closest tree, e.g. "412 NOSTRAND AVENUE"; read it
 --                    as "near ...": it is where a tree stands, not a geocoded building
 --   street_address_dist_m, n_trees_150m   how far that tree is / how many trees voted
+--   trees_alive, trees_poor, trees_dead, stumps
+--                    census records whose point falls INSIDE the cell (no overlap between
+--                    cells, so they add up). Dead trees and stumps are ready planting sites.
 --
 -- Limits:
 --   * A vote, not an official boundary lookup: cells on a district line may get the neighbour's.
@@ -29,8 +32,9 @@ near AS (
   SELECT c.cell_i, c.cell_j, t.*, ST_DISTANCE(c.center, t.g) AS d
   FROM a4i_grid.cells c
   JOIN trees t ON ST_DWITHIN(c.center, t.g, 150)
-)
-SELECT
+),
+voted AS (
+  SELECT
   cell_i,
   cell_j,
   APPROX_TOP_COUNT(nta_name, 1)[OFFSET(0)].value         AS neighborhood,
@@ -41,4 +45,28 @@ SELECT
   MIN(d)                                                 AS street_address_dist_m,
   COUNT(*)                                               AS n_trees_150m
 FROM near
-GROUP BY cell_i, cell_j;
+GROUP BY cell_i, cell_j
+),
+in_cell AS (
+  SELECT
+    CAST(FLOOR(latitude / 0.001) AS INT64)  AS cell_i,
+    CAST(FLOOR(longitude / 0.001) AS INT64) AS cell_j,
+    COUNTIF(status = 'Alive')                     AS trees_alive,
+    COUNTIF(status = 'Alive' AND health = 'Poor') AS trees_poor,
+    COUNTIF(status = 'Dead')                      AS trees_dead,
+    COUNTIF(status = 'Stump')                     AS stumps
+  FROM nyc_trees.tree_census_2015
+  WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+  GROUP BY 1, 2
+)
+SELECT
+  c.cell_i,
+  c.cell_j,
+  v.* EXCEPT (cell_i, cell_j),
+  IFNULL(t.trees_alive, 0) AS trees_alive,
+  IFNULL(t.trees_poor, 0)  AS trees_poor,
+  IFNULL(t.trees_dead, 0)  AS trees_dead,
+  IFNULL(t.stumps, 0)      AS stumps
+FROM a4i_grid.cells c
+LEFT JOIN voted v   USING (cell_i, cell_j)
+LEFT JOIN in_cell t USING (cell_i, cell_j);
