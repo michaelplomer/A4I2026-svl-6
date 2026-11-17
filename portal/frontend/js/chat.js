@@ -5,18 +5,21 @@
 //   tool_result {id, name, response} · ui_action {id, name, args} · error {message} · done {}
 //
 // Every message carries `context` (what the planner sees: view, layer, selected block, map
-// centre) so the agent can resolve "this block" or "here".
+// centre, and the persona they're planning as) so the agent can resolve "this block" or "here"
+// and pitch the answer at the right person.
 import { runUiAction } from "./ui_tools.js";
 
 const SESSION_KEY = "heat-chat-session";
-const SUGGESTIONS = [
+const PERSONA_KEY = "heat-chat-persona";
+// Shown when the persona has no starter questions in the planning sheet.
+const GENERAL_STARTERS = [
   "How hot is the block I've selected, and why?",
   "Which blocks have the most residents 65+ in the hottest spots?",
   "Show me where street trees are sparse",
   "How often does Brooklyn reach 95°F?",
 ];
 
-const state = { sessionId: null, busy: false, getContext: () => ({}), els: {} };
+const state = { sessionId: null, busy: false, getContext: () => ({}), els: {}, questions: [], persona: "" };
 let uiQueue = Promise.resolve(); // UI actions run one after another, across messages
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -115,14 +118,16 @@ async function send(text) {
     const r = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, session_id: state.sessionId, context: state.getContext() }),
+      body: JSON.stringify({ message: text, session_id: state.sessionId,
+        context: { ...state.getContext(), persona: state.persona || null } }),
     });
     if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
     for await (const { event, data } of sseEvents(r)) {
       if (event === "session") {
         state.sessionId = data.session_id;
         store(SESSION_KEY, data.session_id);
-        state.els.mode.textContent = data.mode === "mock" ? "mock agent" : "";
+        state.els.mode.textContent = data.mode === "mock" ? "Mock agent" : "Gemini agent";
+        state.els.mode.classList.toggle("mock", data.mode === "mock");
       } else if (event === "text") {
         answer += data.delta;
         body.innerHTML = md(answer);
@@ -159,57 +164,81 @@ function newChat() {
   state.els.empty.hidden = false;
 }
 
+// ------------------------------------------------------------------ persona + starters
+// The persona picker and the starter questions come from the team's planning sheet
+// (backend/personas.py QUESTIONS): pick who you are, get that role's questions as one-click starts.
+function personaList() {
+  return [...new Set(state.questions.map((q) => q.who))];
+}
+
+function renderStarters() {
+  const mine = state.questions.filter((q) => q.who === state.persona).map((q) => q.ask);
+  const starters = mine.length ? mine : GENERAL_STARTERS;
+  state.els.starters.innerHTML = starters.map((s) =>
+    `<button type="button" class="chat-starter" data-prompt="${esc(s)}">${esc(s)}</button>`).join("");
+}
+
 // ------------------------------------------------------------------ public
-export function initChat({ getContext } = {}) {
+export function initChat({ getContext, questions = [] } = {}) {
   if (getContext) state.getContext = getContext;
+  state.questions = questions;
   state.sessionId = load(SESSION_KEY);
+  const personas = personaList();
+  const saved = load(PERSONA_KEY);
+  state.persona = personas.includes(saved) ? saved : (personas[0] || "");
+
   const panel = document.getElementById("chat-panel");
   panel.innerHTML = `
     <div class="chat-head">
-      <h2>Ask the agent <span class="chat-mode" id="chat-mode"></span></h2>
+      <h2>Planning assistant <span class="chat-mode" id="chat-mode"></span></h2>
       <div class="chat-head-actions">
         <button type="button" class="link-btn" id="chat-new" title="Start a new conversation">New</button>
-        <button type="button" class="icon-btn" id="chat-close" aria-label="Close chat">✕</button>
       </div>
     </div>
+    ${personas.length ? `<div class="chat-toolbar">
+      <label for="chat-persona">I am planning as</label>
+      <select id="chat-persona">${personas.map((p) =>
+        `<option value="${esc(p)}" ${p === state.persona ? "selected" : ""}>${esc(p)}</option>`).join("")}</select>
+    </div>` : ""}
     <div class="chat-log" id="chat-log" aria-live="polite">
       <div class="chat-empty" id="chat-empty">
-        <p class="muted">Ask about heat, who's exposed, or where help should go. The agent can move the map.</p>
-        ${SUGGESTIONS.map((s) => `<button type="button" class="suggestion">${esc(s)}</button>`).join("")}
+        <p class="muted">Ask about heat, who's exposed, or where help should go. The assistant can move the map,
+          outline blocks and number its recommendations.</p>
+        <div class="chat-starters" id="chat-starters" aria-label="Suggested questions"></div>
       </div>
     </div>
     <form class="chat-form" id="chat-form">
+      <label class="sr-only" for="chat-input">Your message</label>
       <textarea id="chat-input" rows="2" placeholder="Ask a question…  (Enter to send, Shift+Enter for a new line)"></textarea>
       <button type="submit" class="send-btn" id="chat-send">Send</button>
     </form>`;
   state.els = {
     panel, log: panel.querySelector("#chat-log"), empty: panel.querySelector("#chat-empty"),
     input: panel.querySelector("#chat-input"), send: panel.querySelector("#chat-send"),
-    mode: panel.querySelector("#chat-mode"),
+    mode: panel.querySelector("#chat-mode"), starters: panel.querySelector("#chat-starters"),
   };
+  renderStarters();
   panel.querySelector("#chat-form").addEventListener("submit", (e) => { e.preventDefault(); send(state.els.input.value); });
   state.els.input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(state.els.input.value); }
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(state.els.input.value); }
   });
   panel.querySelector("#chat-new").addEventListener("click", newChat);
-  panel.querySelector("#chat-close").addEventListener("click", () => toggleChat(false));
-  panel.querySelectorAll(".suggestion").forEach((b) => b.addEventListener("click", () => send(b.textContent)));
-  document.getElementById("chat-toggle")?.addEventListener("click", () => toggleChat());
+  panel.querySelector("#chat-persona")?.addEventListener("change", (e) => {
+    state.persona = e.target.value;
+    store(PERSONA_KEY, state.persona);
+    renderStarters();
+  });
+  // Starters fill the box rather than sending, so the planner can adjust the wording first.
+  state.els.starters.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-prompt]");
+    if (!b) return;
+    state.els.input.value = b.dataset.prompt;
+    state.els.input.focus();
+  });
 }
 
-export function toggleChat(open) {
-  const panel = state.els.panel;
-  const show = open ?? panel.hidden;
-  panel.hidden = !show;
-  document.body.classList.toggle("chat-open", show);
-  document.getElementById("chat-toggle")?.setAttribute("aria-expanded", String(show));
-  window.dispatchEvent(new Event("resize")); // let the map re-measure
-  if (show) state.els.input.focus();
-}
-
-/** Open the panel and send a question (e.g. from "Ask the agent about this block"). */
+/** Send a question (e.g. from "Ask the agent about this block"). The caller shows the tab. */
 export function askAgent(text, { sendNow = true } = {}) {
-  toggleChat(true);
   if (sendNow) send(text);
-  else state.els.input.value = text;
+  else { state.els.input.value = text; state.els.input.focus(); }
 }

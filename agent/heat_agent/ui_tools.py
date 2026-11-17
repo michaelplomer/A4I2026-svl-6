@@ -14,6 +14,10 @@ Keep them fire-and-forget: the agent learns the outcome from the next turn's `ui
 """
 from __future__ import annotations
 
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field
+
 # Map layers the browser knows (portal/frontend/js/layers.js). Keep in sync.
 MAP_LAYERS = {
     "offset_best_f": "Heat offset, measured or predicted (°F vs campaign average). Default.",
@@ -129,8 +133,57 @@ def highlight_cells_on_map(cells: list[str], label: str = "") -> dict:
     return _ok(n_cells=len(cells), label=label)
 
 
+class RankedLocation(BaseModel):
+    """One place in a ranked recommendation. Give the block as cell_i/cell_j (preferred, from
+    tool output) or a point as lat/lon. Fields follow the portal's ranked-location contract."""
+
+    rank: int = Field(ge=1, description="Priority order, 1 = top recommendation.")
+    cell_i: Optional[int] = Field(default=None, description="Block latitude index, floor(lat/0.001).")
+    cell_j: Optional[int] = Field(default=None, description="Block longitude index, floor(lon/0.001).")
+    lat: Optional[float] = Field(default=None, description="Latitude, if no cell is given.")
+    lon: Optional[float] = Field(default=None, description="Longitude, if no cell is given.")
+    label: str = Field(default="", description="Short name, e.g. a nearby street address.")
+    metric: Optional[str] = Field(default=None, description="What it was ranked on, e.g. est_residents_65_plus.")
+    value: Optional[float] = Field(default=None, description="That metric's value here.")
+    unit: Optional[str] = Field(default=None, description="Unit of value, e.g. °F or residents.")
+    layer: Optional[str] = Field(default=None, description="Map layer to show with the results (see set_map_layer).")
+    source: Optional[Literal["measured", "estimated", "predicted", "external"]] = Field(
+        default=None, description="Where the number comes from.")
+
+
+MAX_RANKED = 20
+
+
+def show_ranked_locations(locations: list[RankedLocation], label: str = "") -> dict:
+    """Put numbered markers (1, 2, 3, ...) on the planner's map for a RANKED list of places,
+    e.g. "top 5 blocks for wellness checks", and fit the map to them. Use this instead of
+    highlight_cells_on_map whenever order matters, and list the places in your reply in the same
+    order so the numbers match. Replaces any previous ranked markers.
+
+    Args:
+        locations: Up to 20 places, rank 1 first. Each needs a rank and either cell_i/cell_j or
+            lat/lon; label, metric, value, unit and source make the markers self-explaining.
+        label: Caption for the set, e.g. "Top 5 wellness-check blocks".
+    """
+    if not locations:
+        return _err("Give at least one location.")
+    if len(locations) > MAX_RANKED:
+        return _err(f"At most {MAX_RANKED} locations.")
+    for loc in locations:
+        d = loc.model_dump() if isinstance(loc, BaseModel) else dict(loc)
+        has_cell = d.get("cell_i") is not None and d.get("cell_j") is not None
+        has_point = d.get("lat") is not None and d.get("lon") is not None
+        if not (has_cell or has_point):
+            return _err(f"Location ranked {d.get('rank')} needs cell_i/cell_j or lat/lon.")
+        if has_cell and not (40000 <= int(d["cell_i"]) <= 41000 and -75000 <= int(d["cell_j"]) <= -73000):
+            return _err(f"Location ranked {d.get('rank')} is outside New York.")
+        if d.get("layer") and d["layer"] not in MAP_LAYERS:
+            return _err(f"Unknown layer '{d['layer']}'.")
+    return _ok(n_locations=len(locations), label=label)
+
+
 def clear_map_highlights() -> dict:
-    """Remove the outlined blocks from the planner's map."""
+    """Remove the outlined blocks and ranked markers from the planner's map."""
     return _ok()
 
 
@@ -151,6 +204,7 @@ UI_TOOLS = [
     show_location_on_map,
     set_map_layer,
     highlight_cells_on_map,
+    show_ranked_locations,
     clear_map_highlights,
     open_portal_view,
 ]

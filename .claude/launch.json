@@ -30,6 +30,20 @@
         "8081"
       ],
       "port": 8081
+    },
+    {
+      "name": "heat-portal-mock",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "AGENT_MODE=mock",
+        "portal/.venv/bin/uvicorn",
+        "backend.main:app",
+        "--app-dir",
+        "portal",
+        "--port",
+        "8090"
+      ],
+      "port": 8090
     }
   ]
 }

@@ -7,7 +7,8 @@ const TRANSPARENT = "rgba(0,0,0,0)";
 const state = { map: null, layer: "offset_best_f", overlays: {}, basemap: "topo", cells: null, tracts: null,
   tractById: new Map(), domains: {}, onAsk: null, model: null,
   // Base high for the forecast layer: an NWS daytime period, or a what-if scenario.
-  forecast: null, forecastError: null, baseIdx: "scenario", scenarioHigh: 102, selected: null };
+  forecast: null, forecastError: null, baseIdx: "scenario", scenarioHigh: 102, selected: null,
+  cellDeg: 0.001 };
 const signed = (v, d = 1) => `${v > 0 ? "+" : ""}${v.toFixed(d)}°F`;
 
 function baseHigh() {
@@ -87,27 +88,90 @@ function colorExpr(layer) {
 
 // ------------------------------------------------------------------ map setup
 function baseStyle() {
-  const sources = {}, layers = [{ id: "bg", type: "background", paint: { "background-color": "#e9ecef" } }];
+  const sources = {}, layers = [{ id: "bg", type: "background", paint: { "background-color": "#f1f3f5" } }];
   for (const b of BASEMAPS.filter((b) => b.url)) {
     sources[`base-${b.id}`] = { type: "raster", tiles: [b.url], tileSize: 256, maxzoom: 16,
       attribution: "Basemap: USGS The National Map" };
+    // Faint and grey, so the data colours carry the map.
     layers.push({ id: `base-${b.id}`, type: "raster", source: `base-${b.id}`,
       layout: { visibility: b.id === state.basemap ? "visible" : "none" },
-      paint: { "raster-saturation": -0.6, "raster-opacity": 0.9 } });
+      paint: { "raster-saturation": -0.85, "raster-opacity": 0.48 } });
   }
   return { version: 8, sources, layers };
 }
 
+// Layers whose values are actual Heat Watch measurements get a dot on each measured block, so
+// the measured streets stand out from the surrounding cells.
+const MEASURED_LAYERS = ["measured_offset_f", "heat_index_offset_f"];
+
+// Which cells to outline for a layer: those that have a value for it.
+function hasValueFilter(layer) {
+  if (layer.derived === "forecast") return ["==", ["typeof", ["get", "offset_best_f"]], "number"];
+  if (layer.categories) return ["in", ["get", layer.id], ["literal", Object.keys(layer.categories)]];
+  return ["==", ["typeof", ["get", layer.id]], "number"];
+}
+
+// Numbered marker for ranked results (1 = top recommendation), drawn once per rank.
+function rankedMarkerImage(rank) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 48;
+  const ctx = canvas.getContext("2d");
+  ctx.beginPath();
+  ctx.arc(24, 24, 20, 0, Math.PI * 2);
+  ctx.fillStyle = "#facc15";
+  ctx.fill();
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = "#78350f";
+  ctx.stroke();
+  ctx.fillStyle = "#422006";
+  ctx.font = `bold ${rank > 9 ? 18 : 22}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(rank), 24, 25);
+  return ctx.getImageData(0, 0, 48, 48);
+}
+const MAX_RANKED = 20;
+
 function addDataLayers(map) {
+  const d = state.cellDeg;
   map.addSource("cells", { type: "geojson", data: state.cells,
     attribution: "Heat: NOAA Heat Watch · Trees: NYC 2015 Street Tree Census · People: ACS 2018 (block groups), 2019 (tracts)" });
+  map.addSource("heat-points", { type: "geojson", data: {
+    type: "FeatureCollection",
+    features: state.cells.features
+      .filter((f) => MEASURED_LAYERS.some((k) => typeof f.properties[k] === "number"))
+      .map((f) => ({ type: "Feature", id: f.id, properties: f.properties,
+        geometry: { type: "Point", coordinates: [(f.properties.cell_j + 0.5) * d, (f.properties.cell_i + 0.5) * d] } })),
+  } });
   map.addSource("tracts", { type: "geojson", data: state.tracts });
   map.addSource("selected", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addSource("selected-marker", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  // Ranked results get their own source, so clicking through them doesn't erase the numbers.
+  map.addSource("ranked-markers", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  for (let rank = 1; rank <= MAX_RANKED; rank += 1) {
+    map.addImage(`ranked-marker-${rank}`, rankedMarkerImage(rank), { pixelRatio: 2 });
+  }
 
   map.addLayer({ id: "tract-fill", type: "fill", source: "tracts",
     paint: { "fill-color": TRANSPARENT, "fill-opacity": 0.7 } });
   map.addLayer({ id: "cells-fill", type: "fill", source: "cells",
-    paint: { "fill-color": TRANSPARENT, "fill-opacity": 0.78 } });
+    paint: { "fill-color": TRANSPARENT, "fill-opacity": 0.9 } });
+  map.addLayer({ id: "cells-outline", type: "line", source: "cells",
+    filter: hasValueFilter(findLayer(state.layer)),
+    paint: {
+      "line-color": "#17212b",
+      "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.15, 12, 0.5, 15, 1],
+      "line-opacity": 0.35,
+    } });
+  map.addLayer({ id: "heat-points", type: "circle", source: "heat-points",
+    layout: { visibility: "none" },
+    paint: {
+      "circle-color": TRANSPARENT,
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 3.5, 12, 5.5, 15, 7.5],
+      "circle-stroke-color": "#ffffff",
+      "circle-stroke-width": 1.25,
+      "circle-opacity": 0.98,
+    } });
   map.addLayer({ id: "out-of-range", type: "fill", source: "cells",
     filter: ["==", ["get", "confidence"], "extrapolated"],
     paint: { "fill-color": "#6b7280", "fill-opacity": 0.55 } });
@@ -119,14 +183,27 @@ function addDataLayers(map) {
     paint: { "line-color": "#c026d3", "line-width": 1.6 } });
   map.addLayer({ id: "tract-lines", type: "line", source: "tracts",
     paint: { "line-color": "#374151", "line-width": 0.6, "line-opacity": 0.45 } });
+  map.addLayer({ id: "selected-fill", type: "fill", source: "selected",
+    paint: { "fill-color": "#f59e0b", "fill-opacity": 0.28 } });
   map.addLayer({ id: "selected-line", type: "line", source: "selected",
-    paint: { "line-color": "#f59e0b", "line-width": 3 } });
+    paint: { "line-color": "#b45309", "line-width": 2.4 } });
   // Blocks the agent outlines (highlight_cells_on_map).
   map.addSource("highlights", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addLayer({ id: "highlights-fill", type: "fill", source: "highlights",
     paint: { "fill-color": "#22d3ee", "fill-opacity": 0.25 } });
   map.addLayer({ id: "highlights-line", type: "line", source: "highlights",
     paint: { "line-color": "#0891b2", "line-width": 2.5 } });
+  // Markers on top: a halo for the selected block, numbered pins for ranked results.
+  map.addLayer({ id: "selected-marker-halo", type: "circle", source: "selected-marker",
+    paint: { "circle-radius": 20, "circle-color": "#f59e0b", "circle-opacity": 0.3 } });
+  map.addLayer({ id: "ranked-marker-halo", type: "circle", source: "ranked-markers",
+    paint: { "circle-radius": 20, "circle-color": "#f59e0b", "circle-opacity": 0.3 } });
+  map.addLayer({ id: "ranked-marker-rank", type: "symbol", source: "ranked-markers",
+    layout: {
+      "icon-image": ["concat", "ranked-marker-", ["to-string", ["get", "rank"]]],
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
+    } });
 }
 
 // The apply* functions only touch the map once its style and data layers exist. Before
@@ -137,6 +214,14 @@ function applyLayer() {
   const isCell = layer.source === "cell";
   map.setPaintProperty("cells-fill", "fill-color", isCell ? colorExpr(layer) : TRANSPARENT);
   map.setPaintProperty("tract-fill", "fill-color", isCell ? TRANSPARENT : colorExpr(layer));
+  map.setLayoutProperty("cells-outline", "visibility", isCell ? "visible" : "none");
+  if (isCell) map.setFilter("cells-outline", hasValueFilter(layer));
+  const measured = MEASURED_LAYERS.includes(layer.id);
+  map.setLayoutProperty("heat-points", "visibility", measured ? "visible" : "none");
+  if (measured) {
+    map.setFilter("heat-points", ["==", ["typeof", ["get", layer.id]], "number"]);
+    map.setPaintProperty("heat-points", "circle-color", colorExpr(layer));
+  }
   renderLegend(layer);
 }
 
@@ -160,6 +245,7 @@ function applyBasemap() {
 // ------------------------------------------------------------------ controls
 function renderLayerPicker() {
   const el = document.getElementById("layer-picker");
+  if (!el) return;
   el.innerHTML = LAYER_GROUPS.map((g) => `
     <div class="layer-group-label">${g.label}</div>
     ${g.layers.map((l) => {
@@ -175,6 +261,7 @@ function renderLayerPicker() {
 
 function renderOverlayPicker() {
   const el = document.getElementById("overlay-picker");
+  if (!el) return;
   el.innerHTML = OVERLAYS.map((o) => `
     <label class="opt"><input type="checkbox" value="${o.id}" ${state.overlays[o.id] ? "checked" : ""}>
       <span class="opt-label">${o.label}</span></label>`).join("");
@@ -183,6 +270,7 @@ function renderOverlayPicker() {
 
 function renderBasemapPicker() {
   const el = document.getElementById("basemap-picker");
+  if (!el) return;
   const draw = () => {
     el.innerHTML = BASEMAPS.map((b) =>
       `<button type="button" data-id="${b.id}" class="${b.id === state.basemap ? "on" : ""}">${b.label}</button>`).join("");
@@ -251,6 +339,7 @@ function renderForecastLegend(el, layer) {
 
 function renderLegend(layer) {
   const el = document.getElementById("legend");
+  el.classList.toggle("legend-wide", Boolean(layer.derived || layer.categories));
   if (layer.derived === "forecast") { renderForecastLegend(el, layer); return; }
   if (layer.categories) {
     el.innerHTML = `
@@ -261,16 +350,21 @@ function renderLegend(layer) {
       ${modelCard()}`;
     return;
   }
+  // Continuous layers: a compact bar, with the explanation folded away under "About this layer".
   const domain = dataDomain(layer);
   const fmt = layer.format || ((v) => v.toFixed(1));
   const ticks = domain.length === 3 ? domain : [domain[0], (domain[0] + domain[1]) / 2, domain[1]];
+  // Diverging heat differences read better as cooler / average / warmer than as bare numbers.
+  const tickLabels = layer.diverging
+    ? [`${fmt(ticks[0])} cooler`, "avg", `${fmt(ticks[2])} warmer`]
+    : ticks.map(fmt);
+  const notes = [layer.note, layer.domain ? "" : "Scale: 2nd–98th percentile across Brooklyn."].filter(Boolean);
   el.innerHTML = `
     <div class="legend-title">${layer.label}${layer.unit ? ` <span class="muted">(${layer.unit})</span>` : ""}</div>
     <div class="legend-bar" style="background:linear-gradient(to right, ${layer.palette.join(",")})"></div>
-    <div class="legend-ticks">${ticks.map((t) => `<span>${fmt(t)}</span>`).join("")}</div>
-    ${layer.note ? `<div class="legend-note">${layer.note}</div>` : ""}
-    ${layer.domain ? "" : `<div class="legend-note">Scale: 2nd–98th percentile across Brooklyn.</div>`}
-    ${layer.model ? modelCard() : ""}`;
+    <div class="legend-ticks">${tickLabels.map((t) => `<span>${t}</span>`).join("")}</div>
+    ${notes.length || layer.model ? `<details class="legend-info"><summary>About this layer</summary>
+      ${notes.map((n) => `<div>${n}</div>`).join("")}${layer.model ? modelCard() : ""}</details>` : ""}`;
 }
 
 // ------------------------------------------------------------------ inspector
@@ -305,6 +399,7 @@ const CONFIDENCE_FLAG = {
 
 function renderInspector(p) {
   const el = document.getElementById("inspector");
+  if (!el) return;
   const t = state.tractById.get(p.tract_geo_id) || {};
   const lat = (p.cell_i + 0.5) * 0.001, lon = (p.cell_j + 0.5) * 0.001;
   const num = (v) => typeof v === "number";
@@ -354,9 +449,14 @@ function renderInspector(p) {
     state.onAsk?.(`Why is the block at ${lat.toFixed(4)}, ${lon.toFixed(4)} as hot as it is, and who lives there?`));
 }
 
+const cellCenter = (p) => [(p.cell_j + 0.5) * state.cellDeg, (p.cell_i + 0.5) * state.cellDeg];
+
 function selectCell(feature) {
   state.selected = feature;
   state.map.getSource("selected").setData({ type: "FeatureCollection", features: [feature] });
+  state.map.getSource("selected-marker").setData({ type: "FeatureCollection", features: [
+    { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: cellCenter(feature.properties) } },
+  ] });
   renderInspector(feature.properties);
 }
 
@@ -387,6 +487,7 @@ export async function initMapView({ onAsk, onStatus }) {
     api.cells(), api.tracts(), api.model().catch(() => null),
     api.forecast().catch((e) => { state.forecastError = e.message; return null; }),
   ]);
+  state.cellDeg = cells.cell_deg;
   state.cells = cellsToGeoJSON(cells);
   state.tracts = tracts;
   state.model = model;
@@ -449,6 +550,8 @@ export async function initMapView({ onAsk, onStatus }) {
     if (!f) return;
     // queryRenderedFeatures returns a tiled copy; use the source feature for exact geometry.
     selectCell(state.cells.features[f.id]);
+    // The planner chose this block: let the shell show its details (app.js opens the Block tab).
+    window.dispatchEvent(new CustomEvent("heat:cell-clicked", { detail: f.properties }));
   });
   return state;
 }
@@ -517,7 +620,48 @@ export async function highlightCells(cells, label = "") {
 export async function clearHighlights() {
   await ready;
   state.map.getSource("highlights").setData({ type: "FeatureCollection", features: [] });
+  state.map.getSource("ranked-markers").setData({ type: "FeatureCollection", features: [] });
   state.highlight = null;
+}
+
+/**
+ * Number a ranked list of places on the map (1 = top) and fit the map to them.
+ * Each location gives a block as cell_i/cell_j, or a point as lat/lon; the block it falls in is
+ * filled. If a location names a map layer, the map switches to it. Returns
+ * {count, matched}: how many were shown, and how many fell on a grid block.
+ */
+export async function showLocations(locations, label = "") {
+  await ready;
+  const d = state.cellDeg;
+  const pts = locations.slice(0, MAX_RANKED).map((loc, k) => {
+    const hasCell = Number.isFinite(Number(loc.cell_i)) && Number.isFinite(Number(loc.cell_j));
+    const i = hasCell ? Number(loc.cell_i) : Math.floor(Number(loc.lat) / d);
+    const j = hasCell ? Number(loc.cell_j) : Math.floor(Number(loc.lon) / d);
+    const lat = hasCell ? (i + 0.5) * d : Number(loc.lat), lon = hasCell ? (j + 0.5) * d : Number(loc.lon);
+    return { rank: Number(loc.rank) || k + 1, label: loc.label || "", i, j, lat, lon };
+  }).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+
+  const layerId = locations.map((l) => l.layer).find((id) => findLayer(id)?.source === "cell");
+  if (layerId) showLayer(layerId);
+
+  const blocks = pts.map((p) => cellFeature(p.i, p.j)).filter(Boolean);
+  state.map.getSource("selected").setData({ type: "FeatureCollection", features: blocks });
+  state.map.getSource("selected-marker").setData({ type: "FeatureCollection", features: [] });
+  state.map.getSource("ranked-markers").setData({ type: "FeatureCollection", features: pts.map((p) => ({
+    type: "Feature", properties: { rank: Math.min(p.rank, MAX_RANKED), label: p.label },
+    geometry: { type: "Point", coordinates: [p.lon, p.lat] },
+  })) });
+  state.highlight = { label: label || "ranked locations", count: pts.length,
+    ranked: pts.map((p) => `${p.rank}: ${p.i},${p.j}`) };
+
+  if (pts.length === 1) {
+    state.map.flyTo({ center: [pts[0].lon, pts[0].lat], zoom: 16, duration: 900, essential: true });
+  } else if (pts.length > 1) {
+    const lons = pts.map((p) => p.lon), lats = pts.map((p) => p.lat);
+    state.map.fitBounds([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]],
+      { padding: 60, maxZoom: 15, duration: 700 });
+  }
+  return { count: pts.length, matched: blocks.length };
 }
 
 /** What the planner is looking at, sent with every chat message as the agent's ui_context. */

@@ -17,15 +17,11 @@
         <div class="brand-sub">Street-level heat, who lives there, and where help should go</div>
       </div>
     </div>
-    <div class="topbar-right">
-      <div class="topbar-meta" id="data-status">Loading data…</div>
-      <button type="button" class="chat-toggle" id="chat-toggle" aria-controls="chat-panel" aria-expanded="false">💬 Ask the agent</button>
-    </div>
+    <nav class="topnav" id="sidenav" aria-label="Views"></nav>
+    <div class="topbar-meta" id="data-status">Loading data…</div>
   </header>
 
   <div class="shell">
-    <nav class="sidenav" id="sidenav" aria-label="Views"></nav>
-
     <main class="content">
       <!-- Map view -->
       <section class="view view-map" id="view-map" hidden>
@@ -33,32 +29,47 @@
           <div id="map" role="region" aria-label="Map of Brooklyn"></div>
           <div class="legend" id="legend"></div>
         </div>
-        <aside class="panel" aria-label="Map controls">
-          <div class="panel-section">
-            <h2>Colour the map by</h2>
-            <div id="layer-picker"></div>
-          </div>
-          <div class="panel-section">
-            <h2>Overlays</h2>
-            <div id="overlay-picker"></div>
-          </div>
-          <div class="panel-section">
-            <h2>Basemap</h2>
-            <div id="basemap-picker" class="seg"></div>
-          </div>
-          <div class="panel-section inspector" id="inspector">
-            <h2>Block details</h2>
-            <p class="muted">Click any cell on the map.</p>
-          </div>
-        </aside>
       </section>
 
-      <!-- Generated views (today, decade, equity, history, ask) render here -->
+      <!-- Generated views (today, decade, equity, history) render here -->
       <section class="view view-generic" id="view-generic" hidden></section>
     </main>
 
-    <!-- Agent chat (js/chat.js). Stays open across views so the agent can drive the map. -->
-    <aside class="chat-panel" id="chat-panel" aria-label="Ask the agent" hidden></aside>
+    <!-- Right-hand panel, on every view. The assistant (js/chat.js) stays mounted so the agent can
+         drive the map from any view; Layers and Block only apply to the map view. -->
+    <aside class="side-panel" id="side-panel" aria-label="Assistant and map controls">
+      <div class="side-tabs" role="tablist">
+        <button type="button" role="tab" class="side-tab-btn" data-tab="assistant" aria-selected="true">💬 Assistant</button>
+        <button type="button" role="tab" class="side-tab-btn map-only" data-tab="layers" aria-selected="false">Layers</button>
+        <button type="button" role="tab" class="side-tab-btn map-only" data-tab="block" aria-selected="false">Block</button>
+      </div>
+
+      <div class="side-tab" id="tab-assistant" role="tabpanel">
+        <div class="chat-panel" id="chat-panel"></div>
+      </div>
+
+      <div class="side-tab" id="tab-layers" role="tabpanel" hidden>
+        <div class="panel-section">
+          <h2>Colour the map by</h2>
+          <div id="layer-picker"></div>
+        </div>
+        <div class="panel-section">
+          <h2>Overlays</h2>
+          <div id="overlay-picker"></div>
+        </div>
+        <div class="panel-section">
+          <h2>Basemap</h2>
+          <div id="basemap-picker" class="seg"></div>
+        </div>
+      </div>
+
+      <div class="side-tab inspector" id="tab-block" role="tabpanel" hidden>
+        <div class="panel-section" id="inspector">
+          <h2>Block details</h2>
+          <p class="muted">Click any block on the map, or ask the assistant about one.</p>
+        </div>
+      </div>
+    </aside>
   </div>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>

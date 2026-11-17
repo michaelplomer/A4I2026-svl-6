@@ -73,9 +73,14 @@ No front-end build step: plain ES modules plus MapLibre GL from a CDN.
 
 ## The agent chat
 
-**💬 Ask the agent** (top right) opens a chat docked beside the map. The backend runs the
-ADK agent in `../agent/heat_agent` in-process (Gemini on Vertex AI in the team project) and
-streams back server-sent events:
+The right-hand side panel has three tabs: **💬 Assistant** (the default, on every view),
+**Layers** and **Block** (map view only; clicking a block opens Block). The assistant starts
+with **"I am planning as"**, a persona picker built from the planning sheet's roles
+(`backend/personas.py`), and that role's questions as one-click starters. The persona goes to
+the agent in `context.persona`.
+
+The backend runs the ADK agent in `../agent/heat_agent` in-process (Gemini on Vertex AI in the
+team project) and streams back server-sent events:
 
 | Event | Payload | The UI should |
 |---|---|---|
@@ -88,11 +93,35 @@ streams back server-sent events:
 | `done` | `{}` | re-enable input |
 
 Request: `POST /api/chat {message, session_id?, context?}`. `context` is what the planner sees
-(view, layer, selected block, map centre); the agent reads it as `ui_context`.
+(view, layer, selected block, map centre, persona); the agent reads it as `ui_context`.
+
+### Ranked locations
+
+For ranked answers ("top 5 blocks for wellness checks", dispatch candidates) the agent calls the
+UI tool `show_ranked_locations`, and the map draws **numbered markers** (1 = top) and fits to
+them. Each location follows the ranked-location contract first written for the portal's demo
+`/api/ask` endpoint:
+
+```json
+{
+  "rank": 1,
+  "cell_i": 40644, "cell_j": -73968,
+  "label": "182 Westminster Road",
+  "metric": "est_residents_65_plus", "value": 31.2, "unit": "residents",
+  "layer": "est_residents_65_plus",
+  "source": "measured | estimated | predicted | external"
+}
+```
+
+Give the block as `cell_i`/`cell_j` (preferred: it's what the data tools return) or a point as
+`lat`/`lon`. `layer`, if given, switches the map to that layer. Up to 20 locations. The agent
+is told to list the places in its reply in the same order, so the numbers match. Ranked markers
+survive clicking through the blocks; `clear_map_highlights` removes them.
 
 **Building the UI without Gemini:** start the server with `AGENT_MODE=mock`. Replies are
 scripted (and say so) but use the same events, including real `ui_action`s against real
-cells: ask "how hot is it", "show top sites" or "switch layer".
+cells: ask "how hot is it", "show top sites" (numbered markers on the five hottest measured
+blocks) or "switch layer". `.claude/launch.json` has a `heat-portal-mock` entry (port 8090).
 
 How the agent moves the map, and how to add a UI tool, is in [`../agent/README.md`](../agent/README.md).
 Conversations live in memory (a restart forgets them); swap the session service in

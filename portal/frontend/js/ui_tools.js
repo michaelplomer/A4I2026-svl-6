@@ -6,7 +6,7 @@
 //
 // Each handler returns a short human-readable note for the chat ("Zoomed to block …"),
 // or throws to report a failure in the chat.
-import { focusCell, flyTo, showLayer, highlightCells, clearHighlights, getMapContext } from "./map.js";
+import { focusCell, flyTo, showLayer, highlightCells, clearHighlights, showLocations, getMapContext } from "./map.js";
 import { findLayer } from "./layers.js";
 
 let navigate = (view) => { location.hash = `#/${view}`; };
@@ -43,6 +43,15 @@ export const HANDLERS = {
     await ensureMap();
     const n = await highlightCells(cells, label);
     return `Outlined ${n} block${n === 1 ? "" : "s"}${label ? `: ${label}` : ""}`;
+  },
+
+  async show_ranked_locations({ locations = [], label = "" }) {
+    await ensureMap();
+    const { count, matched } = await showLocations(locations, label);
+    if (!count) throw new Error("no usable locations");
+    const off = count - matched;
+    return `Numbered ${count} location${count === 1 ? "" : "s"}${label ? `: ${label}` : ""}` +
+      (off ? ` (${off} outside the grid)` : "");
   },
 
   async clear_map_highlights() {

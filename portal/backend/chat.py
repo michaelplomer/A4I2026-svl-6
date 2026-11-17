@@ -163,6 +163,21 @@ def _mock_hot_cell() -> tuple[int, int, float]:
         return 40678, -73945, 4.2
 
 
+def _mock_top_cells(n: int) -> list[tuple[int, int, float]]:
+    """The n hottest measured blocks in the snapshot, for the mock's ranked answer."""
+    try:
+        from . import data
+
+        d = json.loads(data.cells_json())
+        cols = d["columns"]
+        i, j, k = cols.index("cell_i"), cols.index("cell_j"), cols.index("measured_offset_f")
+        rows = sorted((r for r in d["rows"] if r[k] is not None), key=lambda r: r[k], reverse=True)
+        return [(r[i], r[j], r[k]) for r in rows[:n]]
+    except Exception:
+        ci, cj, off = _mock_hot_cell()
+        return [(ci, cj, off)]
+
+
 async def _mock_stream(req: ChatRequest) -> AsyncIterator[str]:
     sid = req.session_id or f"mock-{uuid.uuid4().hex[:8]}"
     yield _sse("session", {"session_id": sid, "mode": "mock"})
@@ -184,12 +199,18 @@ async def _mock_stream(req: ChatRequest) -> AsyncIterator[str]:
             yield e
         async for e in say("(Mock agent) I've switched the map to street trees within 100 m."):
             yield e
-    elif any(w in msg for w in ("sites", "top", "recommend", "highlight", "where")):
-        cells = [f"{ci + di},{cj + dj}" for di, dj in [(0, 0), (2, 3), (-3, 1), (5, -4), (-6, -2)]]
-        for e in call("highlight_cells_on_map", {"cells": cells, "label": "Mock: 5 candidate sites"}):
+    elif any(w in msg for w in ("sites", "top", "recommend", "highlight", "where", "truck", "dispatch")):
+        top = _mock_top_cells(5)
+        locations = [{"rank": r, "cell_i": i, "cell_j": j, "label": f"Block {i},{j}",
+                      "metric": "measured_offset_f", "value": round(v, 2), "unit": "°F vs campaign average",
+                      "layer": "measured_offset_f", "source": "measured"}
+                     for r, (i, j, v) in enumerate(top, start=1)]
+        for e in call("show_ranked_locations", {"locations": locations, "label": "Mock: 5 hottest measured blocks"}):
             yield e
-        async for e in say("(Mock agent) Here are five candidate blocks, outlined on the map. "
-                           "A real answer would rank them by heat × residents 65+ × no-car households."):
+        lines = "\n".join(f"{loc['rank']}. Block {loc['cell_i']},{loc['cell_j']}: {loc['value']:+.1f}°F"
+                          for loc in locations)
+        async for e in say("(Mock agent) The five hottest measured blocks, numbered on the map:\n"
+                           f"{lines}\n\nA real answer would rank by heat × residents 65+ × no-car households."):
             yield e
     else:
         cid = f"mock-{uuid.uuid4().hex[:6]}"
