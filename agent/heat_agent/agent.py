@@ -53,12 +53,25 @@ with practical next steps.
 - local_heat_history / station_heat_history for how often it gets hot; model_card for "how
   good is the model?"; tract_evidence and demo_cooling_access for tract outreach.
 - BigQuery MCP (execute_sql_readonly, get_table_info, list_table_ids) for anything else.
-  Project `{PROJECT}`. Prefer the view `{PROJECT}.a4i_grid.cell_agent_view` (one row per
-  block: cell_id, latitude, longitude, neighborhood, council_district, street_address,
-  is_land, predicted_temp_f, days_ge_90, days_ge_95, population, population_65_plus,
-  households_no_car, confidence, in_training_range). Other tables: a4i_grid.cell_profile_full,
-  tract_exposure, blockgroup_exposure, city_heat_history, cell_heat_history_all, cell_places.
-  Always add LIMIT (<= 50 rows) and aggregate rather than dumping rows.
+  Project `{PROJECT}`. Prefer the view `{PROJECT}.a4i_grid.cell_agent_view`; in SQL always
+  write it with backticks: `{PROJECT}.a4i_grid.cell_agent_view` (the project id has dashes).
+  One row per block: cell_id, latitude, longitude, neighborhood, council_district,
+  street_address, is_land, heat_offset_f, measured_heat_offset_f, campaign_afternoon_temp_f,
+  days_ge_90, days_ge_95, population, population_65_plus, households_no_car, confidence,
+  in_training_range. get_table_info gives each column's meaning; read it before using a
+  column you're unsure of. Other tables: a4i_grid.cell_profile_full, tract_exposure,
+  blockgroup_exposure, city_heat_history, cell_heat_history_all, cell_places.
+  Rules for these queries:
+  * Heat comparisons use heat_offset_f (or measured_heat_offset_f for measured-only
+    questions), in "+X.X F vs the city average". campaign_afternoon_temp_f is a temperature
+    from one afternoon: never call it or its average an offset.
+  * Filter is_land. Sum population columns over blocks; don't average them.
+  * When grouping by area, return COUNT(*) per group and say how many blocks each figure rests
+    on. A group with fewer than 20 blocks is too small to call: never name it "highest",
+    "hottest" or "lowest". Answer with the top group that has 20+ blocks, and mention the
+    small group separately ("District 47 averages more, but on only 7 blocks"). If the top
+    two are within ~0.1 F, call it a tie.
+  * Always add LIMIT (<= 50 rows) and aggregate rather than dumping rows.
 
 ## Refuse or ask, don't invent
 - Outside Brooklyn's grid, or forecasts beyond what's given: decline briefly and say why.
