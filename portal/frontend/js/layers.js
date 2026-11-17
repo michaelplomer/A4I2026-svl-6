@@ -26,6 +26,20 @@ export const LAYER_GROUPS = [
         note: "Degrees hotter (+) or cooler (−) than the city average on the measured afternoon. Measured where a car drove, predicted by heat_offset_v1 elsewhere. Not a temperature: add it to the day's forecast high.",
       },
       {
+        // Derived in the browser: base high (NWS forecast day or a what-if scenario) + offset_best_f.
+        id: "forecast_high_f", source: "cell", label: "Estimated high: forecast or scenario day", unit: "°F",
+        derived: "forecast",
+        bands: [
+          { min: null, color: "#91bfdb", label: "below 80°F" },
+          { min: 80, color: "#fee090", label: "80–89°F" },
+          { min: 90, color: "#fdae61", label: "90–94°F: caution" },
+          { min: 95, color: "#f46d43", label: "95–99°F: danger" },
+          { min: 100, color: "#d73027", label: "100–104°F: extreme" },
+          { min: 105, color: "#67001f", label: "105°F+: extreme, hottest blocks" },
+        ],
+        note: "Block high = the day's high + this block's offset. An afternoon estimate, not hourly: the offset was measured relative to the city average on one hot afternoon.",
+      },
+      {
         id: "measured_offset_f", source: "cell", label: "Measured heat offset", unit: "°F",
         palette: HEAT, domain: [-3, 0, 3], format: (v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}°F`,
         note: "Driven blocks only (5+ readings), one afternoon.",

@@ -94,6 +94,17 @@ Cleaning decisions are in the header of each SQL file. The ones worth knowing:
   it) and `female_65_to_66` is empty (estimated from men 65–66 × the tract's female/male ratio
   at 67–69).
 
+## Place names and the agent view
+
+- `11_cell_places.sql` → `cell_places`: neighbourhood (NTA), council district, zip code,
+  community board and nearest street address per cell, voted by the 2015 street trees within
+  150 m. Labels 16,732 of 17,752 Brooklyn land cells (94%). Approximate near boundaries,
+  2015 lines (NTAs redrawn 2020, council districts 2023), addresses read as "near".
+- `12_cell_agent_view.sql` → view `cell_agent_view`: one flat row per cell for the agent
+  (`cell_id`, location, place names, `predicted_temp_f` = campaign mean ~90.1 °F +
+  `offset_best_f`, days ≥ 90/95 °F per year 2019–2025, residents, 65+, households without a
+  car, confidence). Reads the model outputs, so `sql/model/run.sh` recreates it.
+
 ## The model
 
 The prediction model lives in [`sql/model/`](../model/README.md): `bash sql/model/run.sh`

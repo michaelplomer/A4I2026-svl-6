@@ -26,6 +26,7 @@ STEPS=(
   08_cell_built.sql           # built environment = model features
   09_cell_impact.sql          # who is affected, per cell
   10_views.sql                # training_examples, cell_heat_summary, cell_profile
+  11_cell_places.sql          # place names from the tree census (neighbourhood, district, address)
 )
 
 for f in "${STEPS[@]}"; do

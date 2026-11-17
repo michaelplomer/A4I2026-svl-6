@@ -6,6 +6,7 @@
   <title>Brooklyn Heat Portal</title>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/chat.css">
 </head>
 <body>
   <header class="topbar">
@@ -16,7 +17,10 @@
         <div class="brand-sub">Street-level heat, who lives there, and where help should go</div>
       </div>
     </div>
-    <div class="topbar-meta" id="data-status">Loading data…</div>
+    <div class="topbar-right">
+      <div class="topbar-meta" id="data-status">Loading data…</div>
+      <button type="button" class="chat-toggle" id="chat-toggle" aria-controls="chat-panel" aria-expanded="false">💬 Ask the agent</button>
+    </div>
   </header>
 
   <div class="shell">
@@ -52,6 +56,9 @@
       <!-- Generated views (today, decade, equity, history, ask) render here -->
       <section class="view view-generic" id="view-generic" hidden></section>
     </main>
+
+    <!-- Agent chat (js/chat.js). Stays open across views so the agent can drive the map. -->
+    <aside class="chat-panel" id="chat-panel" aria-label="Ask the agent" hidden></aside>
   </div>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>

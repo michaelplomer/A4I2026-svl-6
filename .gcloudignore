@@ -1,0 +1,13 @@
+# Cloud Run source upload from the repo root (Dockerfile). Keep it small, but DO include
+# portal/data/ (the map snapshot), which .gitignore excludes.
+.git/
+.idea/
+.claude/
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/.env
+notebooks/
+scripts/
+data/
+sql/
