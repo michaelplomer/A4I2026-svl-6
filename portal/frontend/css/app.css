@@ -188,3 +188,17 @@ table.data th { font-size: .75rem; color: var(--muted); font-weight: 600; }
 @media (prefers-color-scheme: dark) {
   .why-bar { background: #1f2937; }
 }
+
+/* ---------- forecast / scenario overlay ---------- */
+.base-pick { display: flex; align-items: center; gap: 6px; font-size: .78rem; margin: 4px 0 6px; }
+.base-pick select, .base-pick input {
+  font: inherit; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px;
+}
+.base-pick select { flex: 1; min-width: 0; }
+.base-pick input { width: 64px; }
+.exposure { width: 100%; border-collapse: collapse; font-size: .76rem; margin-top: 8px;
+  font-variant-numeric: tabular-nums; }
+.exposure th { font-weight: 600; color: var(--muted); text-align: right; padding: 2px 4px; }
+.exposure td { text-align: right; padding: 2px 4px; border-top: 1px solid var(--border); }
+.exposure td:first-child, .exposure th:first-child { text-align: left; }

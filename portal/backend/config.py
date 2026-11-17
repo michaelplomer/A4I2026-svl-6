@@ -13,6 +13,11 @@ CELL_DEG = 0.001
 #   python -m backend.data refresh
 CACHE_DIR = Path(os.environ.get("PORTAL_CACHE_DIR", Path(__file__).resolve().parent.parent / "data"))
 
+# Where to ask the National Weather Service for the forecast: central Brooklyn. One 2.5 km
+# NWS grid cell stands in for the city-wide daily high our offsets are measured against.
+FORECAST_LAT = float(os.environ.get("FORECAST_LAT", "40.65"))
+FORECAST_LON = float(os.environ.get("FORECAST_LON", "-73.95"))
+
 # Running on Cloud Run? Then use the service account. Locally, borrow the gcloud CLI's
 # token, because application-default credentials are often a different account.
 ON_CLOUD_RUN = "K_SERVICE" in os.environ

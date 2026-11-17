@@ -10,7 +10,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
-from . import data, personas
+from . import chat, data, forecast, personas
 
 FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -48,6 +48,15 @@ def heat_days():
     return _json(data.heat_days_json)
 
 
+@app.get("/api/forecast")
+def get_forecast():
+    """NWS daytime highs for Brooklyn, next ~7 days (cached 30 min). Live, not from the snapshot."""
+    try:
+        return forecast.forecast()
+    except Exception as e:  # NWS down or slow: the map still works with a scenario temperature
+        raise HTTPException(status_code=502, detail=f"National Weather Service unavailable: {e}")
+
+
 @app.get("/api/model")
 def model():
     """Model card for heat_offset_v1: held-out score, cross-validation, feature importance."""
@@ -59,11 +68,8 @@ def get_personas():
     return {"views": personas.VIEWS, "questions": personas.QUESTIONS}
 
 
-@app.post("/api/ask")
-def ask():
-    # Placeholder for the ADK agent. When it's deployed (Agent Runtime or Cloud Run), proxy
-    # the planner's message here and stream the reply back to the "Ask the agent" view.
-    raise HTTPException(status_code=501, detail="Agent not connected yet.")
+# The ADK agent: POST /api/chat (SSE stream) and GET /api/chat/contract. See backend/chat.py.
+app.include_router(chat.router)
 
 
 app.mount("/", StaticFiles(directory=FRONTEND, html=True), name="frontend")

@@ -13,6 +13,10 @@ for f in 01_model_input.sql 02_train.sql 03_evaluate.sql 04_predict.sql 05_histo
   bq --project_id="${PROJECT}" query --use_legacy_sql=false --quiet < "${DIR}/${f}"
 done
 
+# The agent's flat per-cell view reads the model outputs, so it is (re)created here.
+echo "== ../grid/12_cell_agent_view.sql"
+bq --project_id="${PROJECT}" query --use_legacy_sql=false --quiet < "${DIR}/../grid/12_cell_agent_view.sql"
+
 echo
 echo "Held-out evaluation:"
 bq --project_id="${PROJECT}" query --use_legacy_sql=false --format=pretty \

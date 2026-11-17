@@ -10,6 +10,10 @@
 #   built features only        pooled MAE 1.00 F, mean R2 -0.01 (baseline MAE 1.04)
 #   neighbour term only        pooled MAE 0.83 F, mean R2  0.29
 #   neighbour + built (v1)     pooled MAE 0.83 F, mean R2  0.31, worst fold 0.22
+# Re-run with the EPA Smart Location features (2026-11-17):
+#   built + EPA                pooled MAE 1.01 F, mean R2 -0.01 (no better than built only)
+#   v1 + EPA (v2_epa)          pooled MAE 0.825 F, mean R2 0.315, worst fold 0.21
+#                              vs v1 0.822 / 0.317 / 0.22 -> EPA adds nothing; v1 kept.
 set -euo pipefail
 
 PROJECT="${1:-$(gcloud config get-value project 2>/dev/null)}"
@@ -19,6 +23,8 @@ declare -A FEATS=(
   [built_only]="tract_water_share, bg_housing_units_per_km2, trees_100m, tree_dbh_sum_100m"
   [nbr_only]="nbr_offset_1km"
   [v1]="nbr_offset_1km, tract_water_share, bg_housing_units_per_km2, trees_100m, tree_dbh_sum_100m"
+  [built_epa]="tract_water_share, bg_housing_units_per_km2, trees_100m, tree_dbh_sum_100m, epa_walk_index, epa_intersection_density, epa_activity_density, epa_landuse_mix, epa_auto_road_density, epa_transit_dist_m"
+  [v2_epa]="nbr_offset_1km, tract_water_share, bg_housing_units_per_km2, trees_100m, tree_dbh_sum_100m, epa_walk_index, epa_intersection_density, epa_activity_density, epa_landuse_mix, epa_auto_road_density, epa_transit_dist_m"
 )
 
 data() {  # training_examples + neighbour feature computed without fold $1

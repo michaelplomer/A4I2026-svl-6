@@ -5,8 +5,21 @@ import { LAYER_GROUPS, OVERLAYS, BASEMAPS, FEATURE_LABELS, findLayer } from "./l
 
 const TRANSPARENT = "rgba(0,0,0,0)";
 const state = { map: null, layer: "offset_best_f", overlays: {}, basemap: "topo", cells: null, tracts: null,
-  tractById: new Map(), domains: {}, onAsk: null, model: null };
+  tractById: new Map(), domains: {}, onAsk: null, model: null,
+  // Base high for the forecast layer: an NWS daytime period, or a what-if scenario.
+  forecast: null, forecastError: null, baseIdx: "scenario", scenarioHigh: 102, selected: null };
 const signed = (v, d = 1) => `${v > 0 ? "+" : ""}${v.toFixed(d)}°F`;
+
+function baseHigh() {
+  if (state.baseIdx === "scenario" || !state.forecast) {
+    return { high: state.scenarioHigh, label: `scenario (${state.scenarioHigh}°F)`, scenario: true };
+  }
+  const d = state.forecast.days[state.baseIdx];
+  return { high: d.high_f, label: `${d.name} (NWS ${d.high_f}°F)`, scenario: false };
+}
+
+// Value expression shared by colouring and the hover popup: base high + the block's offset.
+const blockHigh = (p) => (typeof p.offset_best_f === "number" ? baseHigh().high + p.offset_best_f : null);
 
 // ------------------------------------------------------------------ data → GeoJSON
 function cellsToGeoJSON({ cell_deg: d, columns, rows }) {
@@ -52,6 +65,14 @@ function stopValues(domain, n) {
 }
 
 function colorExpr(layer) {
+  if (layer.derived === "forecast") {
+    const value = ["+", baseHigh().high, ["get", "offset_best_f"]];
+    const [first, ...rest] = layer.bands;
+    return ["case",
+      ["==", ["typeof", ["get", "offset_best_f"]], "number"],
+      ["step", value, first.color, ...rest.flatMap((b) => [b.min, b.color])],
+      TRANSPARENT];
+  }
   if (layer.categories) {
     return ["match", ["get", layer.id], ...Object.entries(layer.categories).flat(), TRANSPARENT];
   }
@@ -100,6 +121,12 @@ function addDataLayers(map) {
     paint: { "line-color": "#374151", "line-width": 0.6, "line-opacity": 0.45 } });
   map.addLayer({ id: "selected-line", type: "line", source: "selected",
     paint: { "line-color": "#f59e0b", "line-width": 3 } });
+  // Blocks the agent outlines (highlight_cells_on_map).
+  map.addSource("highlights", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addLayer({ id: "highlights-fill", type: "fill", source: "highlights",
+    paint: { "fill-color": "#22d3ee", "fill-opacity": 0.25 } });
+  map.addLayer({ id: "highlights-line", type: "line", source: "highlights",
+    paint: { "line-color": "#0891b2", "line-width": 2.5 } });
 }
 
 // The apply* functions only touch the map once its style and data layers exist. Before
@@ -176,8 +203,55 @@ function modelCard() {
     R² ${m.cv.r2_mean.toFixed(2)}). Strongest input: nearby measured streets.</div>`;
 }
 
+// Exposure on the chosen day: blocks and people at or above each threshold. Extrapolated blocks
+// are left out -- the model can't tell them apart from "average".
+function exposureSummary() {
+  const base = baseHigh().high;
+  // 105 matters on a 102°F day: offsets span only about ±4°F, so 95 and 100 catch nearly everything.
+  const rows = [95, 100, 105].map((t) => {
+    let blocks = 0, res65 = 0, noCar = 0;
+    for (const f of state.cells.features) {
+      const p = f.properties;
+      if (!p.is_land || p.confidence === "extrapolated" || typeof p.offset_best_f !== "number") continue;
+      if (base + p.offset_best_f >= t) {
+        blocks += 1; res65 += p.est_residents_65_plus || 0; noCar += p.est_households_no_car || 0;
+      }
+    }
+    return { t, blocks, res65, noCar };
+  });
+  return `<table class="exposure">
+    <tr><th></th><th>blocks</th><th>65+</th><th>no car</th></tr>
+    ${rows.map((r) => `<tr><td>≥ ${r.t}°F</td><td>${r.blocks.toLocaleString()}</td>
+      <td>${Math.round(r.res65).toLocaleString()}</td><td>${Math.round(r.noCar).toLocaleString()}</td></tr>`).join("")}
+  </table>
+  <div class="legend-note">Measured and predicted blocks only; 65+ = estimated residents, no car = estimated households.</div>`;
+}
+
+function renderForecastLegend(el, layer) {
+  const days = state.forecast?.days ?? [];
+  const b = baseHigh();
+  el.innerHTML = `
+    <div class="legend-title">${layer.label}</div>
+    <label class="base-pick">Day
+      <select id="base-select">
+        ${days.map((d, i) => `<option value="${i}" ${String(state.baseIdx) === String(i) ? "selected" : ""}>
+          ${d.name}: ${d.high_f}°F, ${d.short_forecast}</option>`).join("")}
+        <option value="scenario" ${state.baseIdx === "scenario" ? "selected" : ""}>What-if scenario…</option>
+      </select>
+    </label>
+    ${b.scenario ? `<label class="base-pick">City high
+      <input id="scenario-input" type="number" min="60" max="115" step="1" value="${state.scenarioHigh}"> °F</label>` : ""}
+    ${state.forecastError ? `<div class="flag warn">NWS forecast unavailable (${state.forecastError}); scenario only.</div>` : ""}
+    ${layer.bands.map((x) => `<div class="legend-cat"><span class="swatch" style="background:${x.color}"></span>${x.label}</div>`).join("")}
+    ${exposureSummary()}
+    <div class="legend-note">${layer.note}</div>
+    <div class="legend-note">${b.scenario ? "Scenario: a what-if city high, not a forecast."
+      : `Forecast: ${state.forecast.source}, grid ${state.forecast.office} ${state.forecast.grid_x},${state.forecast.grid_y}, issued ${new Date(state.forecast.generated_at).toLocaleString()}.`}</div>`;
+}
+
 function renderLegend(layer) {
   const el = document.getElementById("legend");
+  if (layer.derived === "forecast") { renderForecastLegend(el, layer); return; }
   if (layer.categories) {
     el.innerHTML = `
       <div class="legend-title">${layer.label}</div>
@@ -248,6 +322,8 @@ function renderInspector(p) {
       <dt>Est. days ≥ 95°F / yr</dt><dd>${fmtNum(p.est_days_ge_95_per_year, 1)}</dd>
       <dt>Est. days ≥ 100°F / yr</dt><dd>${fmtNum(p.est_days_ge_100_per_year, 1)}</dd>
       <dt>Est. hottest day 2019–25</dt><dd>${num(p.est_peak_f) ? `${p.est_peak_f.toFixed(0)}°F` : "—"}</dd>
+      ${num(p.offset_best_f) ? `<dt>High, ${baseHigh().label}</dt>
+        <dd><b>${blockHigh(p).toFixed(0)}°F</b></dd>` : ""}
     </dl>
     ${renderWhy(p)}
     <h3>Built environment</h3>
@@ -279,8 +355,27 @@ function renderInspector(p) {
 }
 
 function selectCell(feature) {
+  state.selected = feature;
   state.map.getSource("selected").setData({ type: "FeatureCollection", features: [feature] });
   renderInspector(feature.properties);
+}
+
+// The forecast/scenario controls live in the legend, which re-renders; listen once on the parent.
+function bindForecastControls() {
+  const el = document.getElementById("legend");
+  const changed = () => {
+    applyLayer();
+    if (state.selected) renderInspector(state.selected.properties);
+  };
+  el.addEventListener("change", (e) => {
+    if (e.target.id === "base-select") {
+      state.baseIdx = e.target.value === "scenario" ? "scenario" : Number(e.target.value);
+      changed();
+    } else if (e.target.id === "scenario-input") {
+      const v = Number(e.target.value);
+      if (Number.isFinite(v)) { state.scenarioHigh = Math.min(115, Math.max(60, Math.round(v))); changed(); }
+    }
+  });
 }
 
 // ------------------------------------------------------------------ public
@@ -288,10 +383,20 @@ export async function initMapView({ onAsk, onStatus }) {
   state.onAsk = onAsk;
   OVERLAYS.forEach((o) => { state.overlays[o.id] = o.on; });
 
-  const [cells, tracts, model] = await Promise.all([api.cells(), api.tracts(), api.model().catch(() => null)]);
+  const [cells, tracts, model, fc] = await Promise.all([
+    api.cells(), api.tracts(), api.model().catch(() => null),
+    api.forecast().catch((e) => { state.forecastError = e.message; return null; }),
+  ]);
   state.cells = cellsToGeoJSON(cells);
   state.tracts = tracts;
   state.model = model;
+  if (fc?.days?.length) {
+    state.forecast = fc;
+    // Open on the hottest forecast day; if none is warm enough to matter, open on the scenario.
+    const hottest = fc.days.reduce((best, d, i) => (d.high_f > fc.days[best].high_f ? i : best), 0);
+    state.baseIdx = fc.days[hottest].high_f >= 85 ? hottest : "scenario";
+  }
+  bindForecastControls();
   tracts.features.forEach((f) => state.tractById.set(f.properties.geo_id, f.properties));
   const count = (c) => state.cells.features.filter((f) => f.properties.confidence === c).length;
   onStatus?.(`${count("measured").toLocaleString()} measured · ${count("near_data").toLocaleString()} predicted · ` +
@@ -309,9 +414,13 @@ export async function initMapView({ onAsk, onStatus }) {
   renderOverlayPicker();
   renderBasemapPicker();
 
+  state.cellIndex = new Map(state.cells.features.map((f, k) =>
+    [`${f.properties.cell_i},${f.properties.cell_j}`, k]));
+
   map.on("load", () => {
     addDataLayers(map);
     state.ready = true;
+    readyResolve();
     applyLayer();
     applyOverlays();
     applyBasemap();
@@ -327,7 +436,9 @@ export async function initMapView({ onAsk, onStatus }) {
     if (!f) { popup.remove(); map.getCanvas().style.cursor = ""; return; }
     const v = f.properties[layer.id];
     map.getCanvas().style.cursor = "pointer";
-    const shown = layer.categories ? (layer.categoryLabels?.[v] ?? v ?? "no data")
+    const high = layer.derived === "forecast" ? blockHigh(f.properties) : null;
+    const shown = layer.derived === "forecast" ? (high === null ? "no data" : `${high.toFixed(0)}°F`)
+      : layer.categories ? (layer.categoryLabels?.[v] ?? v ?? "no data")
       : typeof v === "number" ? (layer.format || ((x) => x.toFixed(1)))(v) : "no data";
     popup.setLngLat(e.lngLat).setHTML(`${layer.label}: <b>${shown}</b>`)
       .addTo(map);
@@ -352,4 +463,77 @@ export function showLayer(id) {
 
 export function resizeMap() {
   state.map?.resize();
+}
+
+// ------------------------------------------------------------------ agent-facing API
+// Used by js/ui_tools.js to carry out the agent's UI tool calls. Each waits for the map.
+let readyResolve;
+const ready = new Promise((r) => { readyResolve = r; });
+export const whenMapReady = () => ready;
+
+const cellFeature = (i, j) => {
+  const k = state.cellIndex?.get(`${i},${j}`);
+  return k === undefined ? null : state.cells.features[k];
+};
+
+/** Fly to a block and select it (opens the details panel). Returns false if it isn't in the grid. */
+export async function focusCell(cellI, cellJ, zoom = 16) {
+  await ready;
+  const f = cellFeature(cellI, cellJ);
+  const lon = (cellJ + 0.5) * 0.001, lat = (cellI + 0.5) * 0.001;
+  state.map.flyTo({ center: [lon, lat], zoom, essential: true });
+  if (!f) return false;
+  selectCell(f);
+  return true;
+}
+
+export async function flyTo(lat, lon, zoom = 15) {
+  await ready;
+  state.map.flyTo({ center: [lon, lat], zoom, essential: true });
+}
+
+/** Outline blocks given as "cell_i,cell_j" strings and fit the map to them. */
+export async function highlightCells(cells, label = "") {
+  await ready;
+  const d = 0.001;
+  const features = cells.map((c) => String(c).split(",").map(Number))
+    .filter(([i, j]) => Number.isFinite(i) && Number.isFinite(j))
+    .map(([i, j]) => ({
+      type: "Feature", properties: { cell_i: i, cell_j: j, label },
+      geometry: { type: "Polygon", coordinates: [[[j * d, i * d], [(j + 1) * d, i * d],
+        [(j + 1) * d, (i + 1) * d], [j * d, (i + 1) * d], [j * d, i * d]]] },
+    }));
+  state.map.getSource("highlights").setData({ type: "FeatureCollection", features });
+  state.highlight = { label, count: features.length };
+  if (features.length) {
+    const xs = features.flatMap((f) => f.geometry.coordinates[0].map((p) => p[0]));
+    const ys = features.flatMap((f) => f.geometry.coordinates[0].map((p) => p[1]));
+    state.map.fitBounds([[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]],
+      { padding: 80, maxZoom: 16 });
+  }
+  return features.length;
+}
+
+export async function clearHighlights() {
+  await ready;
+  state.map.getSource("highlights").setData({ type: "FeatureCollection", features: [] });
+  state.highlight = null;
+}
+
+/** What the planner is looking at, sent with every chat message as the agent's ui_context. */
+export function getMapContext() {
+  if (!state.map) return { map_loaded: false };
+  const c = state.map.getCenter();
+  const sel = state.selected?.properties;
+  return {
+    layer: state.layer,
+    center: { lat: +c.lat.toFixed(4), lon: +c.lng.toFixed(4) },
+    zoom: +state.map.getZoom().toFixed(1),
+    selected_block: sel ? {
+      cell_i: sel.cell_i, cell_j: sel.cell_j,
+      offset_best_f: sel.offset_best_f, confidence: sel.confidence,
+    } : null,
+    highlighted: state.highlight,
+    base_high: baseHigh().label,
+  };
 }

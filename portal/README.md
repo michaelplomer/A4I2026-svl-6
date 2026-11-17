@@ -35,8 +35,12 @@ To run a second copy next to another session's server, use port 8081
 
 | Path | What it does |
 |---|---|
-| `backend/main.py` | FastAPI: `/api/cells`, `/api/tracts`, `/api/heat-days`, `/api/model`, `/api/personas`, `/api/ask` (501 until the agent is wired), and serves `frontend/` |
+| `backend/main.py` | FastAPI: `/api/cells`, `/api/tracts`, `/api/heat-days`, `/api/model`, `/api/forecast`, `/api/personas`, `/api/chat`, and serves `frontend/` |
+| `backend/chat.py` | `POST /api/chat`: runs the ADK agent (`../agent/heat_agent`) and streams its reply as server-sent events; `GET /api/chat/contract` |
+| `frontend/js/chat.js` | Chat panel: streaming, tool chips, sends the planner's map state with each message |
+| `frontend/js/ui_tools.js` | Browser handlers for the agent's UI tools (zoom to a block, switch layer, outline blocks, …) |
 | `backend/data.py` | BigQuery → compact JSON snapshot in `data/` (git-ignored) |
+| `backend/forecast.py` | National Weather Service daytime highs for Brooklyn (live, cached 30 min) |
 | `backend/personas.py` | Views and the 20 persona questions, each with a data-readiness status |
 | `frontend/js/layers.js` | Map layer catalogue: label, palette, scale, notes. **Add a feature here** |
 | `frontend/js/map.js` | MapLibre map: cells, tracts, overlays, legend, inspector |
@@ -55,10 +59,44 @@ No front-end build step: plain ES modules plus MapLibre GL from a CDN.
 - **Default layer is the heat offset, measured or predicted**, with extrapolated blocks (nothing
   measured within 1 km) greyed out. The model barely beats "average" there, so the map shouldn't
   imply it knows.
+- **Forecast overlay = NWS daytime high + the block's offset.** The offset was measured against
+  the city average on one afternoon, so it pairs with a daily high, not an hourly temperature.
+  `api.weather.gov` is US Government work (public domain, no key); we send a generic User-Agent
+  as NWS asks. Off-season the forecast is mild, so the layer also offers a **what-if scenario**
+  (default 102°F, the sheet's "102°F Thursday"), clearly labelled as not a forecast. Exposure
+  counts (blocks, residents 65+, households without a car at ≥ 95/100/105°F) leave out
+  extrapolated blocks.
 - **Every block explains itself.** The inspector shows `ML.EXPLAIN_PREDICT` contributions in °F,
   in plain words, with the caveat that half the weight is "nearby measured streets".
 - **Snapshot, not live queries.** The demo doesn't depend on BigQuery latency, and the front-end
   lane can work without credentials.
+
+## The agent chat
+
+**💬 Ask the agent** (top right) opens a chat docked beside the map. The backend runs the
+ADK agent in `../agent/heat_agent` in-process (Gemini on Vertex AI in the team project) and
+streams back server-sent events:
+
+| Event | Payload | The UI should |
+|---|---|---|
+| `session` | `{session_id, mode}` | keep `session_id`, send it with the next message |
+| `text` | `{delta}` | append to the reply |
+| `tool_call` | `{id, name, args, ui}` | show a chip for data tools (`ui: false`) |
+| `tool_result` | `{id, name, response}` | mark that chip done |
+| `ui_action` | `{id, name, args}` | run `HANDLERS[name](args)` in `js/ui_tools.js` |
+| `error` | `{message}` | show it |
+| `done` | `{}` | re-enable input |
+
+Request: `POST /api/chat {message, session_id?, context?}`. `context` is what the planner sees
+(view, layer, selected block, map centre); the agent reads it as `ui_context`.
+
+**Building the UI without Gemini:** start the server with `AGENT_MODE=mock`. Replies are
+scripted (and say so) but use the same events, including real `ui_action`s against real
+cells: ask "how hot is it", "show top sites" or "switch layer".
+
+How the agent moves the map, and how to add a UI tool, is in [`../agent/README.md`](../agent/README.md).
+Conversations live in memory (a restart forgets them); swap the session service in
+`backend/chat.py` before relying on that.
 
 ## Adding a layer
 
@@ -72,11 +110,17 @@ add them there and update the cross-validation numbers in `backend/data.py` (`"c
 
 ## Deploy to Cloud Run
 
+Deploy from the **repo root**: the root `Dockerfile` packages `portal/` and `agent/` together.
+
 ```bash
-cd portal
-gcloud run deploy heat-portal --source . --region us-central1 --min-instances 1 --allow-unauthenticated
+gcloud run deploy heat-portal --source . --region us-central1 --min-instances 1 \
+  --set-env-vars GOOGLE_CLOUD_PROJECT=<project-id>,GCP_PROJECT=<project-id>
 ```
 
-The `data/` snapshot is uploaded with the source (see `.gcloudignore`). If it's missing, the
-first request builds it from BigQuery with the service account, which needs BigQuery Data
-Viewer and Job User roles. `--min-instances 1` avoids a cold start during the demo.
+The service account needs **BigQuery Data Viewer + BigQuery Job User** (tables, the live
+`ML.EXPLAIN_PREDICT`, and the managed BigQuery MCP server) and **Vertex AI User** (Gemini).
+`portal/data/` (the map snapshot) is uploaded with the source (root `.gcloudignore`); if it's
+missing, the first request builds it. `--min-instances 1` avoids a cold start during the demo.
+Keep the service private (IAM-required invocation): `/api/chat` has no rate limiting.
+
+`portal/Dockerfile` still builds the map-only portal, without the agent.

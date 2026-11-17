@@ -1,7 +1,7 @@
-# Cloud Run image. Build from portal/:
-#   gcloud run deploy heat-portal --source . --region us-central1 --min-instances 1
-# The data/ snapshot is baked in if present; otherwise the first request builds it from
-# BigQuery using the service account (needs BigQuery Data Viewer + Job User).
+# Superseded by the Dockerfile at the repo root, which also packages agent/ for the chat.
+# Deploy from the repo root:  gcloud run deploy heat-portal --source . --region us-central1
+# This file still builds the map-only portal (no agent) from portal/.
+#
 FROM python:3.12-slim
 WORKDIR /app
 COPY pyproject.toml .

@@ -1,7 +1,9 @@
 // App shell: side navigation and a tiny hash router (#/map, #/today, ...).
 import { api } from "./api.js";
-import { initMapView, showLayer, resizeMap } from "./map.js";
+import { initMapView, showLayer, resizeMap, getMapContext } from "./map.js";
 import { renderView } from "./views.js";
+import { initChat, toggleChat, askAgent } from "./chat.js";
+import { configureUiTools } from "./ui_tools.js";
 
 const els = {
   nav: document.getElementById("sidenav"),
@@ -10,9 +12,22 @@ const els = {
   status: document.getElementById("data-status"),
 };
 
-let views = [], questions = [], mapReady = null, askPrefill = "";
+let views = [], questions = [], mapReady = null, askPrefill = "", currentView = null;
 
 function go(id) { location.hash = `#/${id}`; }
+
+async function showMap() {
+  els.generic.hidden = true;
+  els.mapView.hidden = false;
+  await ensureMap();
+  resizeMap();
+}
+
+// For the agent's UI tools: switch to the map (if needed) before acting on it.
+async function ensureMapVisible() {
+  if (currentView !== "map") go("map");
+  await showMap();
+}
 
 function renderNav(active) {
   els.nav.innerHTML = views.map((v) => {
@@ -26,7 +41,7 @@ function renderNav(active) {
 function ensureMap() {
   if (!mapReady) {
     mapReady = initMapView({
-      onAsk: (text) => { askPrefill = text; go("ask"); },
+      onAsk: (text) => askAgent(text),
       onStatus: (s) => { els.status.textContent = s; },
     }).catch((e) => {
       els.status.textContent = "Data unavailable";
@@ -39,14 +54,18 @@ function ensureMap() {
 
 async function route() {
   const id = (location.hash.replace(/^#\//, "") || "map").split("?")[0];
+  // "Ask the agent" is the chat panel beside the map, not a page of its own.
+  if (id === "ask") {
+    toggleChat(true);
+    go("map");
+    return;
+  }
   const view = views.find((v) => v.id === id) || views[0];
+  currentView = view.id;
   renderNav(view.id);
 
   if (view.id === "map") {
-    els.generic.hidden = true;
-    els.mapView.hidden = false;
-    await ensureMap();
-    resizeMap();
+    await showMap();
     return;
   }
   els.mapView.hidden = true;
@@ -60,6 +79,8 @@ async function route() {
 
 async function main() {
   ({ views, questions } = await api.personas());
+  configureUiTools({ go, ensureMapVisible });
+  initChat({ getContext: () => ({ view: currentView, ...getMapContext() }) });
   window.addEventListener("hashchange", route);
   await route();
   // Warm the data cache so the map opens instantly later. (Don't build the map itself
