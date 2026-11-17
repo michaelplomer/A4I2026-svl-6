@@ -23,6 +23,9 @@ BRANCHES = (
 )
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 USER_AGENT = "HeatRx Brooklyn (github.com/michaelplomer/A4I2026-svl-6)"
+VERIFIED_SCHEDULE_DATE = "2026-11-19"
+VERIFIED_SCHEDULE_CHECKED_ON = "2026-11-17"
+VERIFIED_SCHEDULE_SLUGS = frozenset({"saratoga", "macon", "stone-avenue"})
 
 
 def _clean_text(html):
@@ -80,19 +83,37 @@ def brooklyn_branch_late_hours(local_date: str, target_close_hour: int = 21) -> 
     branches = []
     for slug, name, seconds in BRANCHES:
         hours = _regular_hours(slug, weekday)
+        if (hours["status"] == "schedule_unavailable" and day.isoformat() == VERIFIED_SCHEDULE_DATE
+                and slug in VERIFIED_SCHEDULE_SLUGS):
+            hours = {**hours,
+                "status": "dated_regular_schedule_snapshot",
+                "published_regular_hours": "10 am - 8 pm",
+                "regular_closing_time_et": "20:00",
+                "snapshot_verified_on": VERIFIED_SCHEDULE_CHECKED_ON,
+            }
         walks = {tract: round(duration / 60, 1) for tract, duration in zip(TRACTS, seconds)}
         reachable = [tract for tract, duration in zip(TRACTS, seconds) if duration <= 20 * 60]
         closing = hours.get("regular_closing_time_et")
+        eligible = bool(closing and time.fromisoformat(closing) < target and reachable)
         branches.append({
             "branch": name, **hours, "walk_minutes_from_representative_tract_points": walks,
             "tract_points_within_20_minutes": reachable,
-            "candidate_for_extension": bool(closing and time.fromisoformat(closing) < target and reachable),
+            "candidate_for_extension": eligible,
+            "ranking_status": (
+                "unable_to_rank" if not closing and hours["status"] != "regularly_closed"
+                else "eligible" if eligible
+                else "not_eligible_under_demo_criteria"
+            ),
         })
     branches.sort(key=lambda branch: (
-        not branch["candidate_for_extension"], -len(branch["tract_points_within_20_minutes"]),
+        not branch["candidate_for_extension"], branch["ranking_status"] == "unable_to_rank",
+        -len(branch["tract_points_within_20_minutes"]),
         min(branch["walk_minutes_from_representative_tract_points"].values()),
     ))
     return {
+        "ranking_status": ("unable_to_rank" if all(branch["ranking_status"] == "unable_to_rank" for branch in branches)
+                           else "partial" if any(branch["ranking_status"] == "unable_to_rank" for branch in branches)
+                           else "complete"),
         "planning_date": day.isoformat(), "weekday": weekday, "target_closing_time_et": target.isoformat(timespec="minutes"),
         "regular_schedules_checked_at": now.isoformat(), "branches": branches,
         "walking_source": "FOSSGIS OSRM pedestrian routing, © OpenStreetMap contributors",
@@ -104,7 +125,7 @@ def brooklyn_branch_late_hours(local_date: str, target_close_hour: int = 21) -> 
             "Three demo library candidates only. Walking estimates are from one representative point per "
             "tract, not household catchments or accessibility guarantees. Do not combine them with the "
             "existing nearest-facility walk estimates, which use a different routing source. Regular library "
-            "hours do not establish holiday hours, emergency cooling-center activation, or approval to stay "
+            "hours (including dated snapshots) do not establish holiday hours, emergency cooling-center activation, or approval to stay "
             "open late. Confirm staffing, accessibility, exceptions and official activation before action."
         ),
     }
