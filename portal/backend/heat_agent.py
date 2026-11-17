@@ -5,7 +5,9 @@ import math
 import os
 import re
 import sys
+from datetime import datetime
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from google.cloud import bigquery
 
@@ -283,6 +285,16 @@ async def answer(message: str) -> str:
         model=os.environ["HEAT_AGENT_MODEL"],
         instruction=(
             "Help Brooklyn planners prioritize heat outreach, not diagnose individual risk. "
+            f"The current New York local time is {datetime.now(ZoneInfo('America/New_York')).isoformat()}. "
+            "For an hourly or feels-like forecast, use brooklyn_hourly_weather with the actual date "
+            "and hour in New York. Interpret a relative weekday as the next occurrence with the "
+            "requested hour still ahead, and state the resolved date. For a numbered address, call "
+            "lookup_brooklyn_address first. If lookup fails or the user only names an intersection, "
+            "ask for map coordinates or a nearby numbered address. Do not guess a location. "
+            "Use the official NWS apparent temperature for feels-like if available; identify heat "
+            "index separately if supplied. If neither is available, report official air temperature "
+            "and say feels-like is unavailable. Cite the NWS hour and source. Do not add campaign "
+            "offsets to hourly weather or infer a street-level feels-like forecast. "
             "Use tools for factual claims and name the source, units and uncertainty. For coordinates "
             "call explain_spot; use its tract GEOID to check outreach_plan for access questions. "
             "Pass tract numbers exactly as given (e.g. '369'); tools handle GEOID conversion. "

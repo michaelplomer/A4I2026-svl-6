@@ -12,12 +12,14 @@ from .heat_agent import (
     station_heat_history,
     tract_evidence,
 )
+from .weather import brooklyn_hourly_weather, lookup_brooklyn_address
 
 server = FastMCP("HeatRx Brooklyn evidence")
 
 for tool in (
     explain_spot, tract_evidence, outreach_plan, station_heat_history, model_benchmark,
     outreach_equity, shortlist_blocks, local_heat_history,
+    lookup_brooklyn_address, brooklyn_hourly_weather,
 ):
     server.add_tool(tool)
 

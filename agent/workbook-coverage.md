@@ -14,7 +14,7 @@ the agent must not guess a location.
 | Today 5 · Volunteer outreach | Return measured candidates for a supplied tract and disclose coverage. | Neighborhood boundary lookup and capacity planning |
 | Today 6 · Hot spots with no shade | Show measured high-offset cells with zero recorded street trees when a tract is supplied; do not equate that with no shade. | Broader scope ranking and direct shade data |
 | Today 7 · Truck breakdown | Ask for the prior plan and remaining capacities; do not invent what changed. | Plan state and re-optimization |
-| Today 8 · Thursday at 3 p.m. | Separate campaign offset from forecast and heat index; do not invent either. | Official hourly forecast and geocoding |
+| Today 8 · Thursday at 3 p.m. | Resolve a numbered Brooklyn address or use map coordinates. Report the official NWS hourly air and apparent temperatures separately; report heat index only if published. | Ask for coordinates or a nearby numbered address if an intersection cannot be resolved |
 | Today 9 · Public alert | Draft three lines only from supplied or verified facts; label unverified times and sites. | Official forecast and operational bulletin for publication |
 | Today 10 · Staten Island or next month | Decline unsupported location or forecast. | None for the refusal |
 | Decade 1 · Allocate 2,000 trees | Offer a field-check framework; do not estimate cooling from attributions. | Plantable sites, feasibility, intervention effects |
