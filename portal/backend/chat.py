@@ -30,8 +30,10 @@ import os
 import re
 import sys
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncIterator
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
@@ -100,7 +102,10 @@ async def _adk_stream(req: ChatRequest) -> AsyncIterator[str]:
         session = await svc.create_session(app_name=APP_NAME, user_id=USER_ID)
     yield _sse("session", {"session_id": session.id, "mode": "adk"})
 
-    state_delta = {"ui_context": json.dumps(req.context, indent=1)} if req.context else None
+    state_delta = {
+        "ui_context": json.dumps(req.context or {}, indent=1),
+        "new_york_time": datetime.now(ZoneInfo("America/New_York")).isoformat(),
+    }
     streamed_text = False  # did partial chunks already carry this turn's text?
     seen_calls: set[str] = set()  # streaming repeats each function call in the final event
     said_anything = False         # any text or tool call yet this turn?

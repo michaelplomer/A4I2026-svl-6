@@ -669,12 +669,14 @@ export function getMapContext() {
   if (!state.map) return { map_loaded: false };
   const c = state.map.getCenter();
   const sel = state.selected?.properties;
+  const selectedCenter = sel ? cellCenter(sel) : null;
   return {
     layer: state.layer,
     center: { lat: +c.lat.toFixed(4), lon: +c.lng.toFixed(4) },
     zoom: +state.map.getZoom().toFixed(1),
     selected_block: sel ? {
       cell_i: sel.cell_i, cell_j: sel.cell_j,
+      lat: +selectedCenter[1].toFixed(5), lon: +selectedCenter[0].toFixed(5),
       offset_best_f: sel.offset_best_f, confidence: sel.confidence,
     } : null,
     highlighted: state.highlight,

@@ -73,6 +73,22 @@ No front-end build step: plain ES modules plus MapLibre GL from a CDN.
 
 ## The agent chat
 
+The chat also supports numbered Brooklyn addresses, official hourly NWS weather,
+late-hours library planning, and the three-tract outreach equity comparison.
+Try these in the chat panel:
+
+- Select a map cell and ask what it feels like at 3 p.m. on a forecast date.
+  HeatRx uses the selected cell's coordinates and the NWS grid forecast, not
+  the viewport center or a campaign offset added to hourly weather.
+- Ask which branches should extend their regular hours for the demo tracts on
+  a specified date. Published library schedules are distinct from emergency
+  activation; unavailable hours mean unable to rank.
+- Ask how the three demo tracts compare with Brooklyn on vehicle access, age,
+  and household-weighted average of tract median incomes.
+
+Run in `adk` mode with the project credentials to exercise live tools. The
+scripted `mock` mode only exercises the UI and streaming API contract.
+
 The right-hand side panel has three tabs: **💬 Assistant** (the default, on every view),
 **Layers** and **Block** (map view only; clicking a block opens Block). The assistant starts
 with **"I am planning as"**, a persona picker built from the planning sheet's roles

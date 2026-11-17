@@ -344,5 +344,60 @@ def model_card() -> dict:
     }
 
 
+DEMO_TRACTS = tuple(DEMO_ACCESS)
+
+
+def outreach_equity() -> dict:
+    """Compare the three demo outreach tracts with Brooklyn overall using ACS and measured campaign heat."""
+    rows = _query(f"""
+        WITH measured AS (
+            SELECT tract_geo_id, COUNT(measured_offset_f) AS measured_cells,
+                   AVG(measured_offset_f) AS mean_measured_offset_f
+            FROM `{GRID}.cell_profile_full`
+            WHERE borough = 'Brooklyn' AND is_land AND tract_geo_id IN UNNEST(@tracts)
+            GROUP BY tract_geo_id
+        ),
+        tracts AS (
+            SELECT geo_id, total_pop, pop_65_plus, households, no_cars, median_income
+            FROM `{GRID}.tract_exposure`
+            WHERE borough = 'Brooklyn'
+        ),
+        cohorts AS (
+            SELECT scope, tracts.*
+            FROM tracts
+            CROSS JOIN UNNEST(['Brooklyn', 'Demo shortlist']) AS scope
+            WHERE scope = 'Brooklyn' OR geo_id IN UNNEST(@tracts)
+        ),
+        summary AS (
+            SELECT scope, COUNT(*) AS tract_count,
+                   SAFE_DIVIDE(SUM(IF(households > 0, no_cars, NULL)),
+                       SUM(IF(households > 0 AND no_cars IS NOT NULL, households, NULL))) AS no_vehicle_rate,
+                   SAFE_DIVIDE(SUM(IF(total_pop > 0, pop_65_plus, NULL)),
+                       SUM(IF(total_pop > 0 AND pop_65_plus IS NOT NULL, total_pop, NULL))) AS share_65_plus,
+                   SAFE_DIVIDE(SUM(median_income * households),
+                       SUM(IF(median_income IS NOT NULL, households, NULL))) AS household_weighted_average_of_tract_median_incomes
+            FROM cohorts
+            GROUP BY scope
+        )
+        SELECT ARRAY(SELECT AS STRUCT * FROM summary ORDER BY scope) AS comparison,
+               ARRAY(SELECT AS STRUCT tracts.*, COALESCE(measured_cells, 0) AS measured_cells,
+                            mean_measured_offset_f
+                     FROM tracts LEFT JOIN measured ON geo_id = tract_geo_id
+                     WHERE geo_id IN UNNEST(@tracts) ORDER BY geo_id) AS shortlist
+    """, bigquery.ArrayQueryParameter("tracts", "STRING", list(DEMO_TRACTS)))
+    return {
+        **rows[0],
+        "access_plans": {tract_id: demo_cooling_access(tract_id) for tract_id in DEMO_TRACTS},
+        "sources": [f"{GRID}.tract_exposure (ACS 2019 5-year)", f"{GRID}.cell_profile_full"],
+        "income_display_label": "Household-weighted average of tract median incomes",
+        "limitations": (
+            "Fixed demo shortlist, not a validated borough-wide ranking. Income is a household-weighted "
+            "average of tract medians, not the borough median. Excludes records with missing values in each "
+            "rate. This is an aggregate coverage check, not evidence of historical neglect, race equity, "
+            "or which older individuals lack a car."
+        ),
+    }
+
+
 DATA_TOOLS = [get_block, shortlist_blocks, local_heat_history, station_heat_history,
-              tract_evidence, demo_cooling_access, equity_audit, model_card]
+              tract_evidence, demo_cooling_access, equity_audit, model_card, outreach_equity]

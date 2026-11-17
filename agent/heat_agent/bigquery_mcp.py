@@ -18,7 +18,8 @@ import os
 import subprocess
 import threading
 
-from google.adk.tools.mcp_tool import McpToolset, StreamableHTTPConnectionParams
+from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
+from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
 
 PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "qwiklabs-gcp-03-941c9ce79592")
 MCP_URL = os.environ.get("BIGQUERY_MCP_URL", "https://bigquery.googleapis.com/mcp")
