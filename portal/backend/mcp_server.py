@@ -2,6 +2,7 @@
 
 from mcp.server.fastmcp import FastMCP
 
+from .cooling import brooklyn_branch_late_hours
 from .heat_agent import (
     explain_spot,
     local_heat_history,
@@ -19,7 +20,7 @@ server = FastMCP("HeatRx Brooklyn evidence")
 for tool in (
     explain_spot, tract_evidence, outreach_plan, station_heat_history, model_benchmark,
     outreach_equity, shortlist_blocks, local_heat_history,
-    lookup_brooklyn_address, brooklyn_hourly_weather,
+    lookup_brooklyn_address, brooklyn_hourly_weather, brooklyn_branch_late_hours,
 ):
     server.add_tool(tool)
 

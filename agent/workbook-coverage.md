@@ -9,7 +9,7 @@ the agent must not guess a location.
 | --- | --- | --- |
 | Today 1 · Four hydration trucks | Offer measured candidates if a tract is supplied; distinguish a provided 102°F scenario from a forecast. | Dispatch optimizer, truck constraints, address and routing tools |
 | Today 2 · Two wellness teams | Give aggregate older-adult and vehicle-access estimates separately; ask for operating constraints. | Joint demographics and team capacity; never identify individual households |
-| Today 3 · Extend hours | Show existing demo access options and ask for facility roster and operating hours. | Facility roster, verified hours, walking catchments |
+| Today 3 · Extend hours | Compare published library hours and routed walks for the three demo branches; recommend candidates to verify for an extension. | Borough-wide roster and population catchments; confirm emergency activation and exception hours through NYC |
 | Today 4 · District and intersection | Explain a known Brooklyn coordinate; reject a confirmed out-of-scope location. | Geocoder, district boundaries, candidate-to-district join |
 | Today 5 · Volunteer outreach | Return measured candidates for a supplied tract and disclose coverage. | Neighborhood boundary lookup and capacity planning |
 | Today 6 · Hot spots with no shade | Show measured high-offset cells with zero recorded street trees when a tract is supplied; do not equate that with no shade. | Broader scope ranking and direct shade data |
