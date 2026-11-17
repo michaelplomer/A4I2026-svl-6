@@ -57,6 +57,14 @@ SELECT
   IFNULL(bu.bg_housing_units_per_km2, 0) AS bg_housing_units_per_km2,
   bu.trees_100m,
   bu.tree_dbh_sum_100m,
+  -- EPA Smart Location features (see sql/grid/08_cell_built.sql). Candidates: a model only
+  -- uses the ones its CREATE MODEL selects.
+  bu.epa_walk_index,
+  bu.epa_intersection_density,
+  bu.epa_activity_density,
+  bu.epa_landuse_mix,
+  bu.epa_auto_road_density,
+  bu.epa_transit_dist_m,         -- NULL for 464 land cells (no stop computed); ML imputes the mean
   h.offset_f,                    -- NULL for undriven cells
   h.holdout                      -- NULL for undriven cells
 FROM blocked b

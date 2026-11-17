@@ -30,8 +30,8 @@ const TODO = {
     body: "Estimated days per block (city reference high + the block's offset) exist for driven blocks; see the “Estimated days ≥ 95°F” map layer. Unmeasured blocks get them once the model predicts their offset.",
   },
   ask: {
-    title: "Brooklyn heat planning assistant",
-    body: "Ask about a spot by latitude and longitude, outreach in Tract 369, or how our models performed on held-out Brooklyn cells.",
+    title: "To build: connect the ADK agent",
+    body: "POST /api/ask currently returns 501. Point it at the deployed agent (Agent Runtime or Cloud Run) and stream the reply here.",
   },
 };
 
@@ -114,21 +114,10 @@ function wireAsk(root) {
     const out = root.querySelector("#ask-reply");
     if (!msg) return;
     out.innerHTML = `<div class="chat-reply muted">Sending…</div>`;
-    send.disabled = true;
-    try {
-      const response = await api.ask(msg);
-      const body = await response.json().catch(() => ({}));
-      const reply = response.ok ? body.reply : body.detail;
-      const output = document.createElement("div");
-      output.className = "chat-reply";
-      output.style.whiteSpace = "pre-wrap";
-      output.textContent = typeof reply === "string" ? reply : `Request failed (HTTP ${response.status}).`;
-      out.replaceChildren(output);
-    } catch {
-      out.textContent = "Could not reach the heat agent. Try again.";
-    } finally {
-      send.disabled = false;
-    }
+    const r = await api.ask(msg);
+    const body = await r.json().catch(() => ({}));
+    out.innerHTML = `<div class="chat-reply">${r.ok ? esc(body.reply ?? JSON.stringify(body))
+      : `<span class="muted">${esc(body.detail || `HTTP ${r.status}`)}</span>`}</div>`;
   });
 }
 

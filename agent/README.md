@@ -1,72 +1,106 @@
-# Brooklyn heat planning agent
+# HeatRx: the heat-planning agent (ADK)
 
-The portal's **Ask the agent** view calls HeatRx, a stateless Google ADK agent in
-`portal/backend/heat_agent.py`. Gemini calls its named evidence tools through
-`portal/backend/mcp_server.py`, a private stdio MCP process inside the portal
-container. There is no separate public MCP endpoint or arbitrary SQL tool.
-It uses the existing BigQuery data and does not
-train models, write tables, change the public outreach map, or query Dallas.
+`heat_agent/` is an [Agent Development Kit](https://google.github.io/adk-docs/) agent on
+Gemini (Vertex AI). It combines the HeatRx evidence tools (review branch
+`heatrx-brooklyn-agent-review`) with the portal's streaming chat and map tools.
 
-| Question | Evidence |
-| --- | --- |
-| What drives heat at this coordinate? | Measured campaign offset, tree and land features, and exposure from `a4i_grid.cell_profile_full`; a live `ML.EXPLAIN_PREDICT` call to `a4i_grid.heat_offset_v1` |
-| Who might need help accessing cooling? | Measured grid coverage and tract-level ACS 2019 indicators from `a4i_grid.tract_exposure`; a static cooling-center access plan for Tracts 303, 313, and 369 |
-| How often was it very hot? | Observed station counts and reporting coverage from `a4i_brooklyn.station_daily_temps`; modeled local historical estimates are labeled separately |
-| Which model worked best? | The archived shared holdout comparison: coordinate grid, tree/land, and matched nearby-readings models; not the deployed model's error |
-
-The tree census is represented through existing grid aggregates, not another
-raw scan per request. Earlier baselines remain comparison evidence rather than
-additional inference calls. The agent does not predict individual health risk
-or verify current cooling-center hours.
-
-See [the workbook acceptance checklist](workbook-coverage.md) for all 20 core
-questions, including the required handling of missing data and unsupported claims.
-
-## Hackathon Workflow
-
-- **Load & Explore:** Import `notebooks/heatrx_colab_enterprise.ipynb` into Colab
-  Enterprise and run it against the existing US BigQuery datasets. It checks the
-  three input schemas, Tract 369's measured coverage, and a live model explanation.
-- **Build:** Google ADK + Gemini on Vertex AI + the HeatRx MCP server + BigQuery ML.
-- **Deploy and Show:** Use the private Cloud Run portal and its **Ask the agent**
-  view. Roll out this version to the existing private service before claiming
-  the MCP path is running there. Keep IAM invocation required and leave the
-  separate public outreach map unchanged.
-- **Differentiate:** HeatRx separates measured heat from predictions and shows
-  why a block scores as it does without treating model attributions as causes.
-
-## Progress
-
-The private MCP portal and Colab workflow passed the original Tract 369 and coordinate smoke tests. The newer equity, shortlist, and heat-history tools passed local MCP checks with mocked BigQuery; they are not yet live-validated or deployed.
-
-## Run privately
-
-Use Python 3.11+, Application Default Credentials (ADC) for the hackathon
-account, and an available Gemini model ID. The identity needs Vertex AI
-inference and permission to run BigQuery jobs and read the named Brooklyn
-datasets and model in the US location. Keep the portal private before enabling
-the agent; the route is not an authentication or rate-limiting boundary.
-
-```sh
-cd portal
-export GCP_PROJECT='<your Google Cloud project ID>'
-export GOOGLE_CLOUD_PROJECT="$GCP_PROJECT"
-export GOOGLE_CLOUD_LOCATION=global
-export GOOGLE_GENAI_USE_VERTEXAI=true
-export HEAT_AGENT_MODEL='<Gemini model ID enabled in the lab>'
-uv run uvicorn backend.main:app --host 127.0.0.1 --port 8080
+```
+heat_agent/
+  agent.py         root_agent: model, instruction (HeatRx rules + map guidance), tool list
+  data_tools.py    purpose-built BigQuery tools, incl. a live ML.EXPLAIN_PREDICT  <- tools we built
+  bigquery_mcp.py  Google's managed BigQuery MCP server, read-only               <- managed MCP
+  ui_tools.py      drive the portal map (show_cell_on_map, ...)                  <- front-end contract
+  .env.example     Vertex AI settings for adk web / adk run
 ```
 
-Locally, initialize ADC with `gcloud auth application-default login` if needed.
-The existing portal map snapshot refresh uses the gcloud CLI identity locally;
-the agent itself uses ADC. The API can be tested without the map snapshot:
+## How it meets the required stack
 
-```sh
-curl -s http://localhost:8080/api/ask -H 'Content-Type: application/json' \
-  -d '{"message":"What measured heat and cooling access should guide outreach in Tract 369?"}'
+| Requirement | Here |
+|---|---|
+| ADK + Gemini | `root_agent` in `agent.py`, Gemini 2.5 Flash on Vertex AI (`HEAT_AGENT_MODEL` to change) |
+| **Consume a managed MCP server** (not author one) | `bigquery_mcp.py` connects to `https://bigquery.googleapis.com/mcp`. Only `list_table_ids`, `get_table_info` and `execute_sql_readonly` are exposed; the write-capable `execute_sql` and job tools are filtered out |
+| At least one tool we built | the 8 functions in `data_tools.py` |
+| Agent **calls** the BigQuery ML model | `get_block` runs `ML.EXPLAIN_PREDICT` on `a4i_grid.heat_offset_v1` live for the requested block |
+| Deployed on Google Cloud | Cloud Run, from the repo-root `Dockerfile` (see `portal/README.md`) |
+
+## Tools
+
+| Tool | Answers |
+|---|---|
+| `get_block(lat, lon)` | One block: live prediction + per-feature contributions (°F), measured offset, confidence, place names, hot days, built environment, who lives there |
+| `shortlist_blocks(area, limit, include_predicted, low_tree_only)` | Hottest blocks in a tract (`'369'`), neighbourhood (`'Bedford'`) or `'district 36'`, with residents 65+ and no-car households |
+| `equity_audit(cells)` | Who the recommended blocks reach vs. all of Brooklyn (age, car access, poverty, income) |
+| `local_heat_history(lat, lon)` / `station_heat_history()` | Estimated hot days per block per year vs. the observed city reference / per station |
+| `tract_evidence(tract)` / `demo_cooling_access(tract)` | Tract heat + ACS; hand-made demo access notes for tracts 303, 313, 369 (unverified) |
+| `model_card()` | Held-out score (live from `a4i_grid.model_evaluation`), cross-validation, earlier baselines |
+| BigQuery MCP | Anything else, mostly against `a4i_grid.cell_agent_view` (one plain-named row per block) |
+
+The acceptance checklist for all 20 questions in the planning sheet is in
+[workbook-coverage.md](workbook-coverage.md).
+
+## Run it
+
+On its own, with ADK's dev UI (good for prompt work; the UI tools just return "sent_to_portal"):
+
+```bash
+cd agent
+cp heat_agent/.env.example heat_agent/.env
+../portal/.venv/bin/adk web          # http://localhost:8000, pick heat_agent
 ```
 
-Then try a point copied from the Brooklyn map, ask why the offset is predicted
-to be warmer or cooler, and verify that the live explanation tool ran. Finally,
-ask for the model comparison and check that the answer distinguishes the
-188-cell benchmark from production inference.
+Inside the portal (the real experience: the map moves). From `portal/`:
+
+```bash
+.venv/bin/uvicorn backend.main:app --reload --port 8080
+```
+
+Open http://localhost:8080 and click **💬 Ask the agent**. The portal imports `root_agent`
+from this folder, so edits here show up after the server reloads.
+
+Both use Gemini on Vertex AI in the team project through your gcloud application-default
+login (`gcloud auth application-default login` with the Qwiklabs account).
+
+## Adding a data tool
+
+A tool is a plain Python function with type hints and a docstring. ADK turns the docstring
+into the tool description Gemini sees, so write it for the model: what it returns, units,
+and when to use it.
+
+```python
+# data_tools.py
+def dangerous_days(cell_i: int, cell_j: int) -> dict:
+    """Estimated days per year this block reaches 90/95/100°F (2019-2025) ..."""
+    ...
+
+DATA_TOOLS = [get_block, ..., dangerous_days]
+```
+
+Use `_query(sql, *params)` in `data_tools.py`: parameterized, capped at 256 MB billed and 20 s.
+If a question is a one-off, let the agent answer it through the BigQuery MCP server instead
+of adding a tool.
+
+Still to build from the planning sheet: `dispatch_plan` (zones per truck/team),
+`rank_interventions`, `chronic_hotspots`, `draft_council_memo`, `locate` (address lookup).
+Tables are documented in `sql/grid/README.md` and `sql/model/README.md`.
+
+## UI tools: how the agent moves the map
+
+`ui_tools.py` declares functions the agent can call to act on the planner's screen:
+
+| Tool | What the browser does |
+|---|---|
+| `show_cell_on_map(cell_i, cell_j, zoom)` | Fly to a block, select it, open its details panel |
+| `show_location_on_map(lat, lon, zoom)` | Pan/zoom without selecting |
+| `set_map_layer(layer_id)` | Change what the map is coloured by |
+| `highlight_cells_on_map(cells, label)` | Outline blocks (`"cell_i,cell_j"` strings) and fit to them |
+| `clear_map_highlights()` | Remove the outline |
+| `open_portal_view(view_id)` | Switch to map / today / decade / equity / history |
+
+The Python bodies only validate arguments. The portal backend spots these calls in ADK's
+event stream and forwards them to the browser, where `portal/frontend/js/ui_tools.js` runs
+them. **To add one, add a function here (and to `UI_TOOLS`) and a handler with the same name
+and arguments in `HANDLERS` in `ui_tools.js`.** `GET /api/chat/contract` lists the declarations.
+
+The agent also sees what the planner sees: every message carries the current view, map
+layer, selected block and map centre, stored in session state as `ui_context` and pulled into
+the instruction via `{ui_context?}`. So "this block" just works.

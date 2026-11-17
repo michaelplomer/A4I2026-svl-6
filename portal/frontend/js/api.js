@@ -19,6 +19,7 @@ export const api = {
   tracts: () => getJSON("/api/tracts"),
   heatDays: () => getJSON("/api/heat-days"),
   model: () => getJSON("/api/model"),
+  forecast: () => getJSON("/api/forecast"),
   personas: () => getJSON("/api/personas"),
   ask: (message) =>
     fetch("/api/ask", {

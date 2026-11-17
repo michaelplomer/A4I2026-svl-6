@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from google.cloud import bigquery
 
-from .heat_agent import GRID, _query
+from .data_tools import GRID, _query
 
 NY = ZoneInfo("America/New_York")
 GEOSEARCH = "https://geosearch.planninglabs.nyc/v2/search"

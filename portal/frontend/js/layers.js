@@ -9,7 +9,7 @@
 // To add a feature: add the column to CELL_COLUMNS / TRACT_COLUMNS in backend/data.py,
 // refresh the snapshot, and add an entry here.
 
-const HEAT = ["#2166ac", "#67a9cf", "#d1e5f0", "#f7f7f7", "#fddbc7", "#ef8a62", "#b2182b"];
+const HEAT = ["#2166ac", "#4393c3", "#92c5de", "#f7f7f7", "#f4a582", "#d6604d", "#b2182b"];
 const GREENS = ["#f7fcf5", "#c7e9c0", "#74c476", "#238b45", "#00441b"];
 const BLUES = ["#f7fbff", "#c6dbef", "#6baed6", "#2171b5", "#08306b"];
 const PURPLES = ["#fcfbfd", "#dadaeb", "#9e9ac8", "#6a51a3", "#3f007d"];
@@ -22,17 +22,31 @@ export const LAYER_GROUPS = [
     layers: [
       {
         id: "offset_best_f", source: "cell", label: "Heat offset (measured or predicted)", unit: "°F",
-        palette: HEAT, domain: [-3, 0, 3], format: (v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}°F`, model: true,
+        palette: HEAT, domain: [-3, 0, 3], diverging: true, format: (v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}°F`, model: true,
         note: "Degrees hotter (+) or cooler (−) than the city average on the measured afternoon. Measured where a car drove, predicted by heat_offset_v1 elsewhere. Not a temperature: add it to the day's forecast high.",
       },
       {
-        id: "measured_offset_f", source: "cell", label: "Measured heat offset", unit: "°F",
-        palette: HEAT, domain: [-3, 0, 3], format: (v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}°F`,
-        note: "Driven blocks only (5+ readings), one afternoon.",
+        // Derived in the browser: base high (NWS forecast day or a what-if scenario) + offset_best_f.
+        id: "forecast_high_f", source: "cell", label: "Estimated high: forecast or scenario day", unit: "°F",
+        derived: "forecast",
+        bands: [
+          { min: null, color: "#91bfdb", label: "below 80°F" },
+          { min: 80, color: "#fee090", label: "80–89°F" },
+          { min: 90, color: "#fdae61", label: "90–94°F: caution" },
+          { min: 95, color: "#f46d43", label: "95–99°F: danger" },
+          { min: 100, color: "#d73027", label: "100–104°F: extreme" },
+          { min: 105, color: "#67001f", label: "105°F+: extreme, hottest blocks" },
+        ],
+        note: "Block high = the day's high + this block's offset. An afternoon estimate, not hourly: the offset was measured relative to the city average on one hot afternoon.",
+      },
+      {
+        id: "measured_offset_f", source: "cell", label: "Campaign heat difference (measured)", unit: "°F",
+        palette: HEAT, domain: [-3, 0, 3], diverging: true, format: (v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}°F`,
+        note: "Relative difference from the citywide campaign average, not the actual air temperature. Measured on one afternoon, on driven blocks with 5+ readings.",
       },
       {
         id: "predicted_offset_f", source: "cell", label: "Predicted heat offset (model only)", unit: "°F",
-        palette: HEAT, domain: [-3, 0, 3], format: (v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}°F`, model: true,
+        palette: HEAT, domain: [-3, 0, 3], diverging: true, format: (v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}°F`, model: true,
         note: "The model's prediction everywhere, including driven blocks, so you can compare it with the measurement.",
       },
       {
@@ -43,9 +57,9 @@ export const LAYER_GROUPS = [
         note: "Extrapolated blocks rely on built-environment features alone, which barely beat the city average. Treat them as unknown.",
       },
       {
-        id: "heat_index_offset_f", source: "cell", label: "Measured heat-index offset", unit: "°F",
-        palette: HEAT, domain: [-3, 0, 3], format: (v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}°F`,
-        note: "Same as above, for how hot it feels (temperature + humidity).",
+        id: "heat_index_offset_f", source: "cell", label: "Campaign feels-like difference (measured)", unit: "°F",
+        palette: HEAT, domain: [-3, 0, 3], diverging: true, format: (v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}°F`,
+        note: "Relative heat-index difference including humidity, not the actual feels-like temperature. Measured on one afternoon, on driven blocks only.",
       },
       {
         id: "est_days_ge_95_per_year", source: "cell", label: "Estimated days ≥ 95°F per year", unit: "days",
