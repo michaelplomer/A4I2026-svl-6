@@ -5,7 +5,7 @@ every feature in the `a4i_grid` dataset on Brooklyn, plus one view per decision 
 planning sheet (Today, Decade, Equity audit, Heat history, Ask the agent).
 
 Each view lists the persona questions it will answer and how far the data gets us today:
-**Ready now**, **Needs model**, **Needs agent**, or **Needs external data**. That catalogue
+**Ready now** (9 of 20), **Needs agent** (7) or **Needs external data** (4). That catalogue
 lives in [`backend/personas.py`](backend/personas.py). Update a status there when the model, the
 agent or a dataset lands.
 
@@ -24,13 +24,18 @@ Open http://localhost:8080.
 application-default credentials, because ADC is often a different Google account than the
 Qwiklabs one. Set `GCP_PROJECT` if your project isn't `qwiklabs-gcp-03-941c9ce79592`.
 
-Re-run `refresh` whenever `sql/grid/build.sh` rebuilds the tables.
+Re-run `refresh` whenever `sql/grid/build.sh` or `sql/model/run.sh` rebuilds the tables. The
+snapshot reads `a4i_grid.cell_profile_full`, which `sql/model/run.sh` creates, so run the model
+pipeline at least once first.
+
+To run a second copy next to another session's server, use port 8081
+(`.claude/launch.json` has a `heat-portal-8081` entry).
 
 ## What's where
 
 | Path | What it does |
 |---|---|
-| `backend/main.py` | FastAPI: `/api/cells`, `/api/tracts`, `/api/heat-days`, `/api/personas`, `/api/ask` (501 until the agent is wired), and serves `frontend/` |
+| `backend/main.py` | FastAPI: `/api/cells`, `/api/tracts`, `/api/heat-days`, `/api/model`, `/api/personas`, `/api/ask` (501 until the agent is wired), and serves `frontend/` |
 | `backend/data.py` | BigQuery → compact JSON snapshot in `data/` (git-ignored) |
 | `backend/personas.py` | Views and the 20 persona questions, each with a data-readiness status |
 | `frontend/js/layers.js` | Map layer catalogue: label, palette, scale, notes. **Add a feature here** |
@@ -45,7 +50,13 @@ No front-end build step: plain ES modules plus MapLibre GL from a CDN.
   OpenStreetMap-based tiles would raise the ODbL share-alike question the challenge README warns about.
 - **Cells are drawn in the browser** from `(cell_i, cell_j)` — the same 0.001° grid as the SQL —
   so the payload stays ~3 MB raw (much smaller gzipped) for 29.5k cells.
-- **Demographics are shown on tracts, not cells.** They are not model inputs; the legend group says so.
+- **Demographics are shown per block but labelled as not model inputs.** Block-group values are
+  ACS 2018, car ownership and poverty are tract-level ACS 2019; the inspector says which.
+- **Default layer is the heat offset, measured or predicted**, with extrapolated blocks (nothing
+  measured within 1 km) greyed out. The model barely beats "average" there, so the map shouldn't
+  imply it knows.
+- **Every block explains itself.** The inspector shows `ML.EXPLAIN_PREDICT` contributions in °F,
+  in plain words, with the caveat that half the weight is "nearby measured streets".
 - **Snapshot, not live queries.** The demo doesn't depend on BigQuery latency, and the front-end
   lane can work without credentials.
 
@@ -55,8 +66,9 @@ No front-end build step: plain ES modules plus MapLibre GL from a CDN.
 2. `python -m backend.data refresh`
 3. Add an entry to `LAYER_GROUPS` in `frontend/js/layers.js`.
 
-When the model is trained, export `predicted_offset` (and the top attributions) per cell, and
-flip the `predicted_offset` layer's `status` to `ready`.
+Model inputs that appear in the "why" breakdown need a plain-language name in
+`FEATURE_LABELS` (`frontend/js/layers.js`). If you retrain `heat_offset_v1` with new features,
+add them there and update the cross-validation numbers in `backend/data.py` (`"cv"`).
 
 ## Deploy to Cloud Run
 

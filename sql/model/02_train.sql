@@ -16,7 +16,8 @@ OPTIONS (
 SELECT
   nbr_offset_1km,
   tract_water_share,
-  dist_open_space_m,
+  -- dist_open_space_m: dropped. Weight 0 when included, and the proxy mixes parks with
+  -- paved open land (Floyd Bennett Field), so its sign isn't interpretable anyway.
   bg_housing_units_per_km2,
   trees_100m,
   tree_dbh_sum_100m,

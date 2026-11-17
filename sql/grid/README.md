@@ -58,10 +58,20 @@ Only things computable for a cell nobody drove through:
 | `dist_open_space_m` | Distance to near-empty large tracts (parks, cemeteries, airfield) | −0.20 |
 | `bg_housing_units_per_km2` | Block-group housing density | −0.08 |
 | `trees_50m/100m/250m`, `tree_dbh_sum_100m` | 2015 street tree census | −0.06 |
+| `epa_auto_road_density` | EPA SLD `D3AAO`: miles of auto-oriented road per sq mi | −0.08 |
+| `epa_transit_dist_m` | EPA SLD `D4A`: metres to the nearest transit stop | −0.06 |
+| `epa_walk_index` | EPA SLD `NatWalkInd` (1–20) | +0.05 |
+| `epa_activity_density` | EPA SLD `D1D`: jobs + housing units per acre | −0.04 |
+| `epa_landuse_mix` | EPA SLD `D2A_EPHHM`: jobs/household mix, 0–1 | +0.02 |
+| `epa_intersection_density` | EPA SLD `D3B`: pedestrian intersections per sq mi | +0.01 |
 
-**Next: EPA Smart Location Database.** Join on `bg_geo_id` (EPA's `GEOID10` is the same
-12-character 2010 block-group ID) and add its density, land-use mix, intersection density
-and `NatWalkInd` columns to `08_cell_built.sql`. Also missing: distance to shoreline.
+The `epa_*` columns come from the **EPA Smart Location Database v3** (2021, CC0), loaded by
+[`sql/epa/load.sh`](../epa/load.sh) into `epa_sld.smart_location_nyc` (6,493 NYC block
+groups; every cell matches on `bg_geo_id`). Individually they barely track the offset in
+Brooklyn: walkability and density don't explain this heat map. That's worth saying, and
+the model may still find them useful in combination.
+
+Still missing: distance to shoreline (no usable harbor/East River shoreline in BigQuery).
 
 ## Impact layer (never a model input)
 
@@ -84,20 +94,9 @@ Cleaning decisions are in the header of each SQL file. The ones worth knowing:
   it) and `female_65_to_66` is empty (estimated from men 65–66 × the tract's female/male ratio
   at 67–69).
 
-## Training a model
+## The model
 
-```sql
-CREATE OR REPLACE MODEL a4i_grid.heat_offset_v1
-OPTIONS (model_type = 'LINEAR_REG', input_label_cols = ['offset_f']) AS
-SELECT * EXCEPT (cell_i, cell_j, holdout, n_readings)
-FROM a4i_grid.training_examples
-WHERE NOT holdout;
-
-SELECT * FROM ML.EVALUATE(MODEL a4i_grid.heat_offset_v1,
-  (SELECT * EXCEPT (cell_i, cell_j, holdout, n_readings)
-   FROM a4i_grid.training_examples WHERE holdout));
-```
-
-Then `ML.EXPLAIN_PREDICT` over `cell_built` for land cells. Flag predictions where
-`cells.in_training_range` is false: 44% of Brooklyn's land cells are more than 1 km from
-any driven cell, so the model is extrapolating there.
+The prediction model lives in [`sql/model/`](../model/README.md): `bash sql/model/run.sh`
+trains `heat_offset_v1`, scores it on the held-out blocks, and writes predictions with
+attributions for every land cell (`cell_heat_predicted`), the extended history
+(`cell_heat_history_all`) and `cell_profile_full`.

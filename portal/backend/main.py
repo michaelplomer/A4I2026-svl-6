@@ -48,6 +48,12 @@ def heat_days():
     return _json(data.heat_days_json)
 
 
+@app.get("/api/model")
+def model():
+    """Model card for heat_offset_v1: held-out score, cross-validation, feature importance."""
+    return _json(data.model_json)
+
+
 @app.get("/api/personas")
 def get_personas():
     return {"views": personas.VIEWS, "questions": personas.QUESTIONS}

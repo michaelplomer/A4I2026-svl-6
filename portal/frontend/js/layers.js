@@ -1,9 +1,10 @@
 // Map layer catalogue. One entry per thing the map can be coloured by.
 //
-//   source  "cell"  -> a column of a4i_grid.cell_profile (0.001° squares)
-//           "tract" -> a column of a4i_grid.tract_exposure (census tract polygons)
-//   domain  fixed [min, (mid,) max], or omitted to use the data's 2nd-98th percentile
-//   status  "ready" | "needs_model" -- disabled layers show up greyed out with the reason
+//   source      "cell"  -> a column of a4i_grid.cell_profile_full (0.001° squares)
+//               "tract" -> a column of a4i_grid.tract_exposure (census tract polygons)
+//   domain      fixed [min, (mid,) max], or omitted to use the data's 2nd-98th percentile
+//   categories  {value: colour} for a categorical column (instead of palette/domain)
+//   status      omitted = ready; anything else greys the layer out and shows its note
 //
 // To add a feature: add the column to CELL_COLUMNS / TRACT_COLUMNS in backend/data.py,
 // refresh the snapshot, and add an entry here.
@@ -20,9 +21,26 @@ export const LAYER_GROUPS = [
     label: "Heat",
     layers: [
       {
-        id: "offset_f", source: "cell", label: "Measured heat offset", unit: "°F",
+        id: "offset_best_f", source: "cell", label: "Heat offset (measured or predicted)", unit: "°F",
+        palette: HEAT, domain: [-3, 0, 3], format: (v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}°F`, model: true,
+        note: "Degrees hotter (+) or cooler (−) than the city average on the measured afternoon. Measured where a car drove, predicted by heat_offset_v1 elsewhere. Not a temperature: add it to the day's forecast high.",
+      },
+      {
+        id: "measured_offset_f", source: "cell", label: "Measured heat offset", unit: "°F",
         palette: HEAT, domain: [-3, 0, 3], format: (v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}°F`,
-        note: "How much hotter than the campaign average. Driven blocks only, one afternoon.",
+        note: "Driven blocks only (5+ readings), one afternoon.",
+      },
+      {
+        id: "predicted_offset_f", source: "cell", label: "Predicted heat offset (model only)", unit: "°F",
+        palette: HEAT, domain: [-3, 0, 3], format: (v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}°F`, model: true,
+        note: "The model's prediction everywhere, including driven blocks, so you can compare it with the measurement.",
+      },
+      {
+        id: "confidence", source: "cell", label: "How much to trust the number",
+        categories: { measured: "#1b7837", near_data: "#7fbf7b", extrapolated: "#c2a5cf" },
+        categoryLabels: { measured: "Measured", near_data: "Predicted, near measured streets",
+          extrapolated: "Extrapolated (nothing measured within 1 km)" },
+        note: "Extrapolated blocks rely on built-environment features alone, which barely beat the city average. Treat them as unknown.",
       },
       {
         id: "heat_index_offset_f", source: "cell", label: "Measured heat-index offset", unit: "°F",
@@ -32,17 +50,12 @@ export const LAYER_GROUPS = [
       {
         id: "est_days_ge_95_per_year", source: "cell", label: "Estimated days ≥ 95°F per year", unit: "days",
         palette: ORANGES, format: (v) => v.toFixed(1),
-        note: "City reference high + this block's offset, averaged over 2019–2025. An estimate: assumes the one-afternoon offset holds on every hot day.",
+        note: "City reference high + this block's offset (measured or predicted), averaged over 2019–2025. An estimate: assumes the one-afternoon offset holds on every hot day.",
       },
       {
-        id: "trend_days_ge_95_per_year", source: "cell", label: "Trend in days ≥ 95°F", unit: "days/yr",
+        id: "trend_days_ge_95_per_year", source: "cell", label: "Trend in days ≥ 95°F (measured blocks)", unit: "days/yr",
         palette: HEAT, domain: [-2, 0, 2], format: (v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}/yr`,
         note: "Slope over 7 years. Too short a record to call a real trend; show with care.",
-      },
-      {
-        id: "predicted_offset", source: "cell", label: "Predicted heat offset", unit: "°F",
-        status: "needs_model",
-        note: "Appears once the BQML model scores every cell (ML.EXPLAIN_PREDICT).",
       },
     ],
   },
@@ -64,6 +77,28 @@ export const LAYER_GROUPS = [
         note: "Waterfront proxy. Strongest single correlate of the offset so far (r = −0.29)." },
       { id: "bg_housing_units_per_km2", source: "cell", label: "Housing density (block group)", unit: "units/km²",
         palette: PURPLES, format: (v) => Math.round(v).toLocaleString() },
+    ],
+  },
+  {
+    // EPA Smart Location Database v3 (2021, CC0), per 2010 block group. All are model features.
+    label: "Walkability & urban form (EPA Smart Location)",
+    layers: [
+      { id: "epa_walk_index", source: "cell", label: "National Walkability Index", unit: "1–20",
+        palette: PURPLES, domain: [1, 20], format: (v) => v.toFixed(1),
+        note: "EPA composite of intersection density, transit proximity and land-use mix." },
+      { id: "epa_intersection_density", source: "cell", label: "Street intersection density", unit: "per sq mi",
+        palette: PURPLES, format: (v) => Math.round(v).toLocaleString() },
+      { id: "epa_activity_density", source: "cell", label: "Activity density", unit: "jobs + homes / acre",
+        palette: PURPLES, format: (v) => v.toFixed(0) },
+      { id: "epa_landuse_mix", source: "cell", label: "Land-use mix", unit: "0–1",
+        palette: PURPLES, domain: [0, 1], format: (v) => v.toFixed(2),
+        note: "0 = a single use (all homes or all jobs), 1 = an even mix." },
+      { id: "epa_auto_road_density", source: "cell", label: "Auto-oriented road density", unit: "mi / sq mi",
+        palette: GREYS, format: (v) => v.toFixed(1),
+        note: "Highways and arterials: wide asphalt, few trees." },
+      { id: "epa_transit_dist_m", source: "cell", label: "Distance to nearest transit stop", unit: "m",
+        palette: ORANGES, format: (v) => `${Math.round(v)} m`,
+        note: "Also an access question: how far a resident without a car walks to a bus or train." },
     ],
   },
   {
@@ -101,7 +136,7 @@ export const LAYER_GROUPS = [
 export const OVERLAYS = [
   { id: "tract-lines", label: "Census tract boundaries", on: true },
   { id: "driven-outline", label: "Outline measured blocks", on: false },
-  { id: "out-of-range", label: "Grey out blocks >1 km from a measurement", on: false },
+  { id: "out-of-range", label: "Grey out extrapolated blocks (nothing measured within 1 km)", on: true },
   { id: "holdout", label: "Highlight held-out test blocks", on: false },
   { id: "non-land", label: "Show water / non-residential cells", on: false },
 ];
@@ -115,6 +150,15 @@ export const BASEMAPS = [
     url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}" },
   { id: "none", label: "None", url: null },
 ];
+
+// Plain-language names for the model's inputs, used in the "why" breakdown.
+export const FEATURE_LABELS = {
+  nbr_offset_1km: "Nearby measured streets",
+  tract_water_share: "Waterfront (water share of tract)",
+  tree_dbh_sum_100m: "Tree size within 100 m",
+  trees_100m: "Street-tree count within 100 m",
+  bg_housing_units_per_km2: "Housing density",
+};
 
 export function findLayer(id) {
   for (const g of LAYER_GROUPS) for (const l of g.layers) if (l.id === id) return l;

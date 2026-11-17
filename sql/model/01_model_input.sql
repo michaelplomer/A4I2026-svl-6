@@ -52,7 +52,9 @@ SELECT
   IFNULL(nbr.nbr_n, 0)          AS nbr_n,
   bu.tract_water_share,
   bu.dist_open_space_m,
-  bu.bg_housing_units_per_km2,
+  -- NULL only for all-water block groups (no land area): no housing, so 0 rather than
+  -- letting BigQuery ML impute the average.
+  IFNULL(bu.bg_housing_units_per_km2, 0) AS bg_housing_units_per_km2,
   bu.trees_100m,
   bu.tree_dbh_sum_100m,
   h.offset_f,                    -- NULL for undriven cells

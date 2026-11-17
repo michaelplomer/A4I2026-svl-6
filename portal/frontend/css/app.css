@@ -169,3 +169,22 @@ table.data th { font-size: .75rem; color: var(--muted); font-weight: 600; }
   .legend { min-width: 0; max-width: 70%; }
   .view-generic { padding: 16px; }
 }
+
+/* ---------- model: categorical legend, confidence flags, "why" bars ---------- */
+.legend-cat { display: flex; align-items: center; gap: 6px; font-size: .78rem; margin: 3px 0; }
+.legend-cat .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.model-card { border-top: 1px solid var(--line, #e5e7eb); padding-top: 6px; }
+.flag.ok { background: var(--ready-bg); color: var(--ready); }
+.why { margin: 4px 0 2px; }
+.why-row { display: grid; grid-template-columns: 1fr 90px 58px; align-items: center; gap: 6px;
+  font-size: .78rem; margin: 3px 0; }
+.why-bar { position: relative; height: 10px; background: #f3f4f6; border-radius: 3px; }
+.why-bar::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: #9ca3af; }
+.why-bar > span { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
+.why-bar .pos { background: #d6604d; }
+.why-bar .neg { background: #4393c3; }
+.why-val { text-align: right; font-variant-numeric: tabular-nums; }
+.why-note { font-size: .72rem; margin: 2px 0 8px; }
+@media (prefers-color-scheme: dark) {
+  .why-bar { background: #1f2937; }
+}

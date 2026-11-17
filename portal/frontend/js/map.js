@@ -1,11 +1,12 @@
 // Map view: grid cells and tracts over a public-domain basemap, a layer picker,
 // overlays, a legend and a click-to-inspect panel.
 import { api } from "./api.js";
-import { LAYER_GROUPS, OVERLAYS, BASEMAPS, findLayer } from "./layers.js";
+import { LAYER_GROUPS, OVERLAYS, BASEMAPS, FEATURE_LABELS, findLayer } from "./layers.js";
 
 const TRANSPARENT = "rgba(0,0,0,0)";
-const state = { map: null, layer: "offset_f", overlays: {}, basemap: "topo", cells: null, tracts: null,
-  tractById: new Map(), domains: {}, onAsk: null };
+const state = { map: null, layer: "offset_best_f", overlays: {}, basemap: "topo", cells: null, tracts: null,
+  tractById: new Map(), domains: {}, onAsk: null, model: null };
+const signed = (v, d = 1) => `${v > 0 ? "+" : ""}${v.toFixed(d)}°F`;
 
 // ------------------------------------------------------------------ data → GeoJSON
 function cellsToGeoJSON({ cell_deg: d, columns, rows }) {
@@ -51,6 +52,9 @@ function stopValues(domain, n) {
 }
 
 function colorExpr(layer) {
+  if (layer.categories) {
+    return ["match", ["get", layer.id], ...Object.entries(layer.categories).flat(), TRANSPARENT];
+  }
   const domain = dataDomain(layer);
   const values = stopValues(domain, layer.palette.length);
   const stops = values.flatMap((v, i) => [v, layer.palette[i]]);
@@ -84,7 +88,7 @@ function addDataLayers(map) {
   map.addLayer({ id: "cells-fill", type: "fill", source: "cells",
     paint: { "fill-color": TRANSPARENT, "fill-opacity": 0.78 } });
   map.addLayer({ id: "out-of-range", type: "fill", source: "cells",
-    filter: ["all", ["==", ["get", "is_land"], true], ["!=", ["get", "in_training_range"], true]],
+    filter: ["==", ["get", "confidence"], "extrapolated"],
     paint: { "fill-color": "#6b7280", "fill-opacity": 0.55 } });
   map.addLayer({ id: "driven-outline", type: "line", source: "cells",
     filter: ["==", ["get", "is_driven"], true],
@@ -164,8 +168,25 @@ function renderBasemapPicker() {
   });
 }
 
+function modelCard() {
+  const m = state.model;
+  if (!m) return "";
+  return `<div class="legend-note model-card">Model <b>${m.model}</b>: typical error ${m.cv.mae_f.toFixed(2)}°F
+    vs ${m.cv.baseline_mae_f.toFixed(2)}°F for "every block is average" (5-fold block cross-validation,
+    R² ${m.cv.r2_mean.toFixed(2)}). Strongest input: nearby measured streets.</div>`;
+}
+
 function renderLegend(layer) {
   const el = document.getElementById("legend");
+  if (layer.categories) {
+    el.innerHTML = `
+      <div class="legend-title">${layer.label}</div>
+      ${Object.entries(layer.categories).map(([k, c]) => `
+        <div class="legend-cat"><span class="swatch" style="background:${c}"></span>${layer.categoryLabels?.[k] ?? k}</div>`).join("")}
+      ${layer.note ? `<div class="legend-note">${layer.note}</div>` : ""}
+      ${modelCard()}`;
+    return;
+  }
   const domain = dataDomain(layer);
   const fmt = layer.format || ((v) => v.toFixed(1));
   const ticks = domain.length === 3 ? domain : [domain[0], (domain[0] + domain[1]) / 2, domain[1]];
@@ -174,41 +195,71 @@ function renderLegend(layer) {
     <div class="legend-bar" style="background:linear-gradient(to right, ${layer.palette.join(",")})"></div>
     <div class="legend-ticks">${ticks.map((t) => `<span>${fmt(t)}</span>`).join("")}</div>
     ${layer.note ? `<div class="legend-note">${layer.note}</div>` : ""}
-    ${layer.domain ? "" : `<div class="legend-note">Scale: 2nd–98th percentile across Brooklyn.</div>`}`;
+    ${layer.domain ? "" : `<div class="legend-note">Scale: 2nd–98th percentile across Brooklyn.</div>`}
+    ${layer.model ? modelCard() : ""}`;
 }
 
 // ------------------------------------------------------------------ inspector
 const fmtPct = (v) => (typeof v === "number" ? `${(v * 100).toFixed(0)}%` : "—");
 const fmtNum = (v, d = 0) => (typeof v === "number" ? v.toLocaleString(undefined, { maximumFractionDigits: d }) : "—");
 
+// "Why": each model input's contribution in °F relative to an average block, largest first.
+function renderWhy(p) {
+  const attr = p.attributions;
+  if (!Array.isArray(attr) || !attr.length) return "";
+  const max = Math.max(...attr.map(([, v]) => Math.abs(v)), 0.01);
+  return `
+    <h3>Why <span class="muted">(model, vs. an average block)</span></h3>
+    <div class="why">
+      ${attr.map(([f, v]) => `
+        <div class="why-row" title="${f}">
+          <span class="why-label">${FEATURE_LABELS[f] ?? f}</span>
+          <span class="why-bar"><span class="${v >= 0 ? "pos" : "neg"}"
+            style="width:${(Math.abs(v) / max) * 50}%;${v >= 0 ? "left:50%" : `right:50%`}"></span></span>
+          <span class="why-val">${signed(v, 2)}</span>
+        </div>`).join("")}
+    </div>
+    <div class="muted why-note">Associations learned from one afternoon, not proven causes.
+      "Nearby measured streets" means this block inherits the pattern of measured blocks around it.</div>`;
+}
+
+const CONFIDENCE_FLAG = {
+  measured: `<div class="flag ok">Measured: a Heat Watch car drove here.</div>`,
+  near_data: `<div class="flag info">Predicted by the model from measured streets within 1 km. Typical error ≈ 0.8°F.</div>`,
+  extrapolated: `<div class="flag warn">Extrapolated: nothing measured within 1 km. The model barely beats "average" here; treat the number as unknown.</div>`,
+};
+
 function renderInspector(p) {
   const el = document.getElementById("inspector");
   const t = state.tractById.get(p.tract_geo_id) || {};
   const lat = (p.cell_i + 0.5) * 0.001, lon = (p.cell_j + 0.5) * 0.001;
-  const measured = typeof p.offset_f === "number";
+  const num = (v) => typeof v === "number";
   el.innerHTML = `
     <h2>Block details</h2>
     <div class="muted">Cell ${p.cell_i}, ${p.cell_j} · ${lat.toFixed(4)}, ${lon.toFixed(4)}</div>
-    ${measured ? "" : `<div class="flag info">Not driven: no measured temperature here. The model will predict one.</div>`}
-    ${p.in_training_range ? "" : `<div class="flag warn">More than 1 km from any measurement: a prediction here would be extrapolation.</div>`}
+    ${CONFIDENCE_FLAG[p.confidence] ?? `<div class="flag warn">Water or non-residential cell: not modelled.</div>`}
     <h3>Heat</h3>
     <dl>
-      <dt>Measured offset</dt><dd>${measured ? `${p.offset_f > 0 ? "+" : ""}${p.offset_f.toFixed(2)}°F` : "—"}</dd>
-      <dt>Heat-index offset</dt><dd>${typeof p.heat_index_offset_f === "number" ? `${p.heat_index_offset_f > 0 ? "+" : ""}${p.heat_index_offset_f.toFixed(2)}°F` : "—"}</dd>
-      <dt>Readings in cell</dt><dd>${fmtNum(p.n_readings)}</dd>
-      <dt>Predicted offset</dt><dd class="muted">model not trained</dd>
-      ${p.holdout ? `<dt>Test set</dt><dd>held out</dd>` : ""}
+      <dt>Heat offset</dt><dd><b>${num(p.offset_best_f) ? signed(p.offset_best_f, 2) : "—"}</b></dd>
+      <dt>Measured</dt><dd>${num(p.measured_offset_f) ? `${signed(p.measured_offset_f, 2)} <span class="muted">(${fmtNum(p.n_readings)} readings)</span>` : "—"}</dd>
+      <dt>Model prediction</dt><dd>${num(p.predicted_offset_f) ? signed(p.predicted_offset_f, 2) : "—"}</dd>
+      ${num(p.heat_index_offset_f) ? `<dt>Heat-index offset</dt><dd>${signed(p.heat_index_offset_f, 2)}</dd>` : ""}
+      ${p.holdout ? `<dt>Test set</dt><dd>held out (model never saw it)</dd>` : ""}
       <dt>Est. days ≥ 95°F / yr</dt><dd>${fmtNum(p.est_days_ge_95_per_year, 1)}</dd>
       <dt>Est. days ≥ 100°F / yr</dt><dd>${fmtNum(p.est_days_ge_100_per_year, 1)}</dd>
+      <dt>Est. hottest day 2019–25</dt><dd>${num(p.est_peak_f) ? `${p.est_peak_f.toFixed(0)}°F` : "—"}</dd>
     </dl>
+    ${renderWhy(p)}
     <h3>Built environment</h3>
     <dl>
       <dt>Street trees ≤100 m</dt><dd>${fmtNum(p.trees_100m)}</dd>
-      <dt>Street trees ≤250 m</dt><dd>${fmtNum(p.trees_250m)}</dd>
       <dt>Trunk diameter ≤100 m</dt><dd>${fmtNum(p.tree_dbh_sum_100m)} in</dd>
-      <dt>To large open space</dt><dd>${fmtNum(p.dist_open_space_m)} m</dd>
       <dt>Tract water share</dt><dd>${fmtPct(p.tract_water_share)}</dd>
       <dt>Housing density</dt><dd>${fmtNum(p.bg_housing_units_per_km2)}/km²</dd>
+      <dt>Walkability index <span class="muted">(EPA)</span></dt><dd>${fmtNum(p.epa_walk_index, 1)} / 20</dd>
+      <dt>Intersections / sq mi <span class="muted">(EPA)</span></dt><dd>${fmtNum(p.epa_intersection_density)}</dd>
+      <dt>Arterial road density <span class="muted">(EPA)</span></dt><dd>${fmtNum(p.epa_auto_road_density, 1)} mi/sq mi</dd>
+      <dt>To transit <span class="muted">(EPA)</span></dt><dd>${num(p.epa_transit_dist_m) ? `${fmtNum(p.epa_transit_dist_m)} m` : "—"}</dd>
     </dl>
     <h3>Who lives here <span class="muted">(block group ${p.bg_geo_id ?? "—"}, ${p.borough ?? ""})</span></h3>
     <dl>
@@ -237,12 +288,14 @@ export async function initMapView({ onAsk, onStatus }) {
   state.onAsk = onAsk;
   OVERLAYS.forEach((o) => { state.overlays[o.id] = o.on; });
 
-  const [cells, tracts] = await Promise.all([api.cells(), api.tracts()]);
+  const [cells, tracts, model] = await Promise.all([api.cells(), api.tracts(), api.model().catch(() => null)]);
   state.cells = cellsToGeoJSON(cells);
   state.tracts = tracts;
+  state.model = model;
   tracts.features.forEach((f) => state.tractById.set(f.properties.geo_id, f.properties));
-  const measured = state.cells.features.filter((f) => typeof f.properties.offset_f === "number").length;
-  onStatus?.(`${cells.rows.length.toLocaleString()} cells · ${measured.toLocaleString()} measured · ${tracts.features.length} tracts`);
+  const count = (c) => state.cells.features.filter((f) => f.properties.confidence === c).length;
+  onStatus?.(`${count("measured").toLocaleString()} measured · ${count("near_data").toLocaleString()} predicted · ` +
+    `${count("extrapolated").toLocaleString()} extrapolated blocks · ${tracts.features.length} tracts`);
 
   const map = new maplibregl.Map({
     container: "map", style: baseStyle(), center: [-73.95, 40.65], zoom: 11, maxZoom: 17,
@@ -274,8 +327,9 @@ export async function initMapView({ onAsk, onStatus }) {
     if (!f) { popup.remove(); map.getCanvas().style.cursor = ""; return; }
     const v = f.properties[layer.id];
     map.getCanvas().style.cursor = "pointer";
-    popup.setLngLat(e.lngLat)
-      .setHTML(`${layer.label}: <b>${typeof v === "number" ? (layer.format || ((x) => x.toFixed(1)))(v) : "no data"}</b>`)
+    const shown = layer.categories ? (layer.categoryLabels?.[v] ?? v ?? "no data")
+      : typeof v === "number" ? (layer.format || ((x) => x.toFixed(1)))(v) : "no data";
+    popup.setLngLat(e.lngLat).setHTML(`${layer.label}: <b>${shown}</b>`)
       .addTo(map);
   });
   map.on("mouseout", () => popup.remove());

@@ -18,20 +18,27 @@ from . import config
 CELLS_FILE = config.CACHE_DIR / "cells.json"
 TRACTS_FILE = config.CACHE_DIR / "tracts.geojson"
 HEATDAYS_FILE = config.CACHE_DIR / "heat_days.json"
+MODEL_FILE = config.CACHE_DIR / "model.json"
 
-# Columns exported per cell from a4i_grid.cell_profile, in order. Keys and bookkeeping
-# first, then the heat, built-environment and impact layers the map can colour by.
+# Columns exported per cell, in order. Keys and bookkeeping first, then the heat,
+# built-environment and impact layers the map can colour by. Source: the view
+# a4i_grid.cell_profile_full (built by sql/model/run.sh), plus the measured-only
+# extras from cell_heat and cell_heat_summary.
 CELL_COLUMNS = [
     # keys / bookkeeping (cells)
     "cell_i", "cell_j", "tract_geo_id", "bg_geo_id", "borough",
     "is_driven", "dist_to_driven_m", "in_training_range", "is_land",
-    # heat: measured (cell_heat) and estimated history (cell_heat_summary)
-    "offset_f", "heat_index_offset_f", "n_readings", "holdout",
+    # heat: model view (cell_heat_predicted) -- best = measured where driven, else predicted
+    "offset_best_f", "measured_offset_f", "predicted_offset_f", "confidence",
+    # heat: measured-only extras (cell_heat) and estimated history (cell_heat_history_all)
+    "heat_index_offset_f", "n_readings", "holdout",
     "est_days_ge_90_per_year", "est_days_ge_95_per_year", "est_days_ge_100_per_year",
     "est_peak_f", "trend_days_ge_95_per_year",
     # built environment = model features (cell_built)
     "trees_50m", "trees_100m", "trees_250m", "tree_dbh_sum_100m",
     "dist_open_space_m", "tract_water_share", "bg_housing_units_per_km2",
+    "epa_walk_index", "epa_intersection_density", "epa_activity_density",
+    "epa_landuse_mix", "epa_auto_road_density", "epa_transit_dist_m",
     # impact = who lives here, never model inputs (cell_impact)
     "bg_total_pop", "bg_share_65_plus", "bg_median_age", "bg_median_income",
     "bg_renter_share", "bg_severe_rent_burden_rate", "bg_pop_per_km2",
@@ -81,14 +88,43 @@ def refresh() -> None:
     config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
     g = f"`{config.PROJECT_ID}.{config.GRID_DATASET}`"
 
-    rows = _query(f"SELECT {', '.join(CELL_COLUMNS)} FROM {g}.cell_profile")
+    extras = {"heat_index_offset_f": "h", "n_readings": "h", "holdout": "h",
+              "trend_days_ge_95_per_year": "s"}
+    select = ", ".join(f"{extras.get(c, 'f')}.{c}" for c in CELL_COLUMNS)
+    rows = _query(f"""
+        SELECT {select}, f.attributions
+        FROM {g}.cell_profile_full f
+        LEFT JOIN {g}.cell_heat h USING (cell_i, cell_j)
+        LEFT JOIN {g}.cell_heat_summary s USING (cell_i, cell_j)
+    """)
+    # attributions: per cell, [[feature, contribution in F], ...] largest first (land cells only)
     cells = {
         "cell_deg": config.CELL_DEG,
-        "columns": CELL_COLUMNS,
-        "rows": [[_clean(r[c]) for c in CELL_COLUMNS] for r in rows],
+        "columns": CELL_COLUMNS + ["attributions"],
+        "rows": [[_clean(r[c]) for c in CELL_COLUMNS]
+                 + [[[a["feature"], _clean(round(a["attribution_f"], 3))] for a in r["attributions"]]
+                    if r["attributions"] else None]
+                 for r in rows],
     }
     CELLS_FILE.write_text(json.dumps(cells, separators=(",", ":")))
     print(f"cells: {len(rows):,} -> {CELLS_FILE}")
+
+    # Model card: held-out score and what drives the predictions overall.
+    ev = _query(f"SELECT * FROM {g}.model_evaluation")[0]
+    imp = _query(f"""SELECT feature, attribution FROM ML.GLOBAL_EXPLAIN(MODEL {g}.heat_offset_v1)
+                     ORDER BY attribution DESC""")
+    MODEL_FILE.write_text(json.dumps({
+        "model": ev["model"],
+        "holdout_cells": ev["holdout_cells"],
+        "holdout_mae_f": _clean(ev["holdout_mae_f"]),
+        "holdout_r2": _clean(ev["holdout_r2"]),
+        "baseline_mae_f": _clean(ev["baseline_mae_f"]),
+        "mae_reduction_vs_baseline": _clean(ev["mae_reduction_vs_baseline"]),
+        # 5-fold block cross-validation, from sql/model/cross_validate.sh (see sql/model/README.md)
+        "cv": {"mae_f": 0.82, "r2_mean": 0.32, "r2_worst_fold": 0.22, "baseline_mae_f": 1.04},
+        "importance": [{"feature": r["feature"], "importance": _clean(r["attribution"])} for r in imp],
+    }, separators=(",", ":")))
+    print(f"model card -> {MODEL_FILE}")
 
     # Tracts the grid touches, geometry simplified to ~10 m for the browser.
     rows = _query(f"""
@@ -142,6 +178,10 @@ def tracts_json() -> str:
 
 def heat_days_json() -> str:
     return _load(HEATDAYS_FILE)
+
+
+def model_json() -> str:
+    return _load(MODEL_FILE)
 
 
 if __name__ == "__main__":

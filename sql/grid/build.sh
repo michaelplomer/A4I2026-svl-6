@@ -8,6 +8,7 @@
 # Needs, in the same project:
 #   a4i_brooklyn.heat_observations, a4i_brooklyn.station_daily_temps   (load notebook / load.sh)
 #   nyc_trees.tree_census_2015      (bq cp bigquery-public-data:new_york_trees.tree_census_2015 ...)
+#   epa_sld.smart_location_nyc      (bash sql/epa/load.sh)
 #   the a4i_grid dataset            (bq mk --dataset --location=US <project>:a4i_grid)
 set -euo pipefail
 

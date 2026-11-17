@@ -9,8 +9,17 @@
 --                                A proxy that mixes green and paved open land.
 --   trees_50m/100m/250m, tree_dbh_sum_100m   live street trees (2015 census) near the centre
 --
--- EPA Smart Location Database: NOT loaded yet. When it is, join it on bg_geo_id
--- (EPA's GEOID10 is the same 12-character 2010 block-group ID) and add its columns here.
+--   epa_*  EPA Smart Location Database v3 (2021, CC0), per 2010 block group, from
+--          epa_sld.smart_location_nyc (joined on bg_geo_id; every cell matches):
+--     epa_walk_index             NatWalkInd, 1-20 national walkability index
+--     epa_intersection_density   D3B, pedestrian-oriented street intersections per sq mi
+--     epa_activity_density       D1D, jobs + housing units per acre
+--     epa_landuse_mix            D2A_EPHHM, jobs/household entropy, 0 (one use) to 1 (even mix)
+--     epa_auto_road_density      D3AAO, miles of auto-oriented road per sq mi (highways, arterials)
+--     epa_transit_dist_m         D4A, metres to the nearest transit stop (NULL = none / not computed)
+--   Loading notes: the CSV's GEOID10 column is in scientific notation (digits lost), so the ID
+--   was rebuilt from STATEFP/COUNTYFP/TRACTCE/BLKGRPCE; -99999 sentinels became NULL.
+--   On their own these barely track the offset in Brooklyn (|r| <= 0.08 on driven cells).
 --
 -- Known gap: distance to shoreline (no usable harbor/East River shoreline in BigQuery).
 
@@ -47,9 +56,16 @@ SELECT
   IFNULL(tf.trees_50m, 0)              AS trees_50m,
   IFNULL(tf.trees_100m, 0)             AS trees_100m,
   IFNULL(tf.trees_250m, 0)             AS trees_250m,
-  IFNULL(tf.tree_dbh_sum_100m, 0)      AS tree_dbh_sum_100m
+  IFNULL(tf.tree_dbh_sum_100m, 0)      AS tree_dbh_sum_100m,
+  e.natwalkind                         AS epa_walk_index,
+  e.d3b                                AS epa_intersection_density,
+  e.d1d                                AS epa_activity_density,
+  e.d2a_ephhm                          AS epa_landuse_mix,
+  e.d3aao                              AS epa_auto_road_density,
+  e.d4a                                AS epa_transit_dist_m
 FROM a4i_grid.cells c
 CROSS JOIN open_space os
 LEFT JOIN tree_feats tf USING (cell_i, cell_j)
 LEFT JOIN a4i_grid.tract_exposure t       ON t.geo_id     = c.tract_geo_id
-LEFT JOIN a4i_grid.blockgroup_exposure bg ON bg.bg_geo_id = c.bg_geo_id;
+LEFT JOIN a4i_grid.blockgroup_exposure bg ON bg.bg_geo_id = c.bg_geo_id
+LEFT JOIN epa_sld.smart_location_nyc e    ON e.bg_geo_id  = c.bg_geo_id;
