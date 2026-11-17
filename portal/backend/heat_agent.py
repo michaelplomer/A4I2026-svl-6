@@ -183,7 +183,7 @@ def outreach_equity() -> dict:
                    SAFE_DIVIDE(SUM(IF(total_pop > 0, pop_65_plus, NULL)),
                        SUM(IF(total_pop > 0 AND pop_65_plus IS NOT NULL, total_pop, NULL))) AS share_65_plus,
                    SAFE_DIVIDE(SUM(median_income * households),
-                       SUM(IF(median_income IS NOT NULL, households, NULL))) AS weighted_tract_median_income
+                       SUM(IF(median_income IS NOT NULL, households, NULL))) AS household_weighted_average_of_tract_median_incomes
             FROM cohorts
             GROUP BY scope
         )
@@ -197,6 +197,7 @@ def outreach_equity() -> dict:
         **rows[0],
         "access_plans": {tract_id: outreach_plan(tract_id) for tract_id in PRIORITY_TRACTS},
         "sources": [f"{GRID}.tract_exposure (ACS 2019 5-year)", f"{GRID}.cell_profile_full"],
+        "income_display_label": "Household-weighted average of tract median incomes",
         "limitations": (
             "Fixed demo shortlist, not a validated borough-wide ranking. Income is a household-weighted "
             "average of tract medians, not the borough median. Excludes records with missing values in each "
@@ -292,7 +293,10 @@ async def answer(message: str) -> str:
             "explain the model, not causality or who will suffer. Treat an extrapolated prediction "
             "as a lead for field checks, not proof. Station counts are observations; cell histories "
             "are estimates using a fixed offset. Do not infer current cooling-center opening or "
-            "transit availability. Use outreach_equity for shortlist and equity questions, "
+            "transit availability. Use outreach_equity for shortlist and equity questions. "
+            "If reporting its income figures, use the exact income_display_label and explicitly "
+            "say this is not a median for the shortlist or for Brooklyn as a whole. Never call "
+            "it weighted median income or imply statistical significance from this comparison. Use "
             "shortlist_blocks for measured candidates in a supplied tract, and local_heat_history "
             "for past hot-day estimates at a coordinate. To compare two known coordinates, call "
             "explain_spot on both and separate observed differences from model contributions. "
