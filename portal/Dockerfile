@@ -6,7 +6,7 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY pyproject.toml .
 RUN pip install --no-cache-dir "fastapi>=0.115" "uvicorn[standard]>=0.30" \
-    "google-cloud-bigquery>=3.25" "db-dtypes>=1.3"
+    "google-cloud-bigquery>=3.25" "google-adk>=1.20,<2" "mcp>=1.20,<2" "db-dtypes>=1.3"
 COPY backend backend
 COPY frontend frontend
 COPY data data

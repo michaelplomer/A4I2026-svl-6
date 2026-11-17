@@ -3,12 +3,15 @@
 Run locally from portal/:
     .venv/bin/uvicorn backend.main:app --reload --port 8080
 """
+import logging
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 from . import data, personas
 
@@ -16,6 +19,11 @@ FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
 
 app = FastAPI(title="Brooklyn Heat Portal")
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+logger = logging.getLogger(__name__)
+
+
+class AskRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
 
 
 def _json(payload_fn):
@@ -60,10 +68,18 @@ def get_personas():
 
 
 @app.post("/api/ask")
-def ask():
-    # Placeholder for the ADK agent. When it's deployed (Agent Runtime or Cloud Run), proxy
-    # the planner's message here and stream the reply back to the "Ask the agent" view.
-    raise HTTPException(status_code=501, detail="Agent not connected yet.")
+async def ask(request: AskRequest):
+    if not os.environ.get("HEAT_AGENT_MODEL"):
+        raise HTTPException(status_code=503, detail="Heat agent is not enabled on this portal.")
+    if not request.message.strip():
+        raise HTTPException(status_code=422, detail="Enter a question.")
+    from . import heat_agent
+
+    try:
+        return {"reply": await heat_agent.answer(request.message.strip())}
+    except Exception as error:
+        logger.warning("Heat agent request failed: %s", type(error).__name__)
+        raise HTTPException(status_code=502, detail="Heat agent could not complete the request.") from error
 
 
 app.mount("/", StaticFiles(directory=FRONTEND, html=True), name="frontend")
