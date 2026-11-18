@@ -1,0 +1,287 @@
+<title>HeatRx Pitch Video Script</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: a shooting script. Timeline strip on top, then one row per segment:
+   timecode + shot rail on the left, what's on screen and the spoken words on the right. */
+:root {
+  --bg: #f5f7fa; --surface: #ffffff; --ink: #15202b; --muted: #5b6b7c; --line: #dde3ea;
+  --hot: #c2410c; --cool: #2f6fae;
+  --lead: #15202b; --data: #2f6fae; --agent: #c2410c; --story: #7c4dbd; --ui: #2f855a;
+  --today: #c2410c; --budget: #7c4dbd; --decade: #2f855a;
+  --chip-bg: #eef2f6; --prompt-bg: #f0f3f7;
+  --display: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f151c; --surface: #16202a; --ink: #e6edf3; --muted: #93a3b4; --line: #26323f;
+  --hot: #f0834f; --cool: #6aa6e0;
+  --lead: #e6edf3; --data: #6aa6e0; --agent: #f0834f; --story: #b28ce8; --ui: #5cc28c;
+  --today: #f0834f; --budget: #b28ce8; --decade: #5cc28c;
+  --chip-bg: #1d2a36; --prompt-bg: #1b2631; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f151c; --surface: #16202a; --ink: #e6edf3; --muted: #93a3b4; --line: #26323f;
+  --hot: #f0834f; --cool: #6aa6e0;
+  --lead: #e6edf3; --data: #6aa6e0; --agent: #f0834f; --story: #b28ce8; --ui: #5cc28c;
+  --today: #f0834f; --budget: #b28ce8; --decade: #5cc28c;
+  --chip-bg: #1d2a36; --prompt-bg: #1b2631; color-scheme: dark }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--body); }
+.wrap { max-width: 980px; margin: 0 auto; padding-block: 32px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(1.8rem, 4vw, 2.5rem); line-height: 1.1; letter-spacing: -0.01em; }
+h2 { font-size: 1.25rem; margin: 40px 0 12px; }
+.eyebrow { font: 600 .72rem/1 var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.lede { color: var(--muted); max-width: 64ch; margin: 10px 0 0; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* heat stripe: the offset scale the portal uses, cool to hot */
+.stripe { height: 6px; border-radius: 3px; margin: 18px 0 22px;
+  background: linear-gradient(90deg, #2166ac, #67a9cf, #d1e5f0, #f7f7f7, #fddbc7, #ef8a62, #b2182b); }
+
+.stats { display: flex; flex-wrap: wrap; gap: 10px 28px; margin-top: 18px; }
+.stat b { font: 700 1.35rem/1 var(--display); display: block; font-variant-numeric: tabular-nums; }
+.stat span { font-size: .78rem; color: var(--muted); }
+.over b { color: var(--hot); }
+
+/* controls */
+.controls { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; margin: 26px 0 12px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button, .chip { font: 500 .82rem var(--body); color: var(--ink); background: var(--surface);
+  border: 0; padding: 6px 11px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--line); border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; }
+.chip[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+button:focus-visible { outline: 2px solid var(--cool); outline-offset: 2px; }
+
+/* timeline */
+.timeline { position: relative; height: 34px; display: flex; border-radius: 6px; overflow: hidden;
+  border: 1px solid var(--line); background: var(--surface); }
+.timeline .blk { height: 100%; border-right: 1px solid var(--surface); opacity: .9; }
+.timeline .blk.dim { opacity: .18; }
+.timeline .pause { background: repeating-linear-gradient(135deg, var(--chip-bg) 0 6px, transparent 6px 12px); }
+.ticks { display: flex; justify-content: space-between; font: 500 .7rem var(--mono); color: var(--muted); margin-top: 4px; }
+
+/* script rows */
+.script { display: grid; gap: 0; margin-top: 20px; border-top: 1px solid var(--line); }
+.row { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 20px; padding: 20px 0;
+  border-bottom: 1px solid var(--line); transition: opacity .2s; }
+.row.dim { opacity: .3; }
+.rail { display: grid; gap: 6px; align-content: start; }
+.tc { font: 500 1rem var(--mono); font-variant-numeric: tabular-nums; }
+.who { display: inline-flex; align-items: center; gap: 6px; font: 600 .78rem var(--body); letter-spacing: .06em; }
+.tag { justify-self: start; font: 600 .68rem/1 var(--body); letter-spacing: .08em; text-transform: uppercase;
+  padding: 4px 7px; border-radius: 4px; background: var(--chip-bg); color: var(--muted); }
+.tag.today { color: var(--today); } .tag.budget { color: var(--budget); } .tag.decade { color: var(--decade); }
+.visual { font-size: .85rem; color: var(--muted); margin: 0 0 8px; }
+.visual b { color: var(--ink); font-weight: 600; }
+.say { font-size: 1.12rem; line-height: 1.6; margin: 0; max-width: 64ch; }
+.prompts { display: grid; gap: 8px; margin: 12px 0 0; }
+.prompt { display: flex; gap: 10px; align-items: flex-start; background: var(--prompt-bg); border-radius: 6px; padding: 10px 12px; }
+.prompt code { font: 500 .82rem/1.5 var(--mono); flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.copy { font: 500 .75rem var(--body); color: var(--cool); background: none; border: 1px solid var(--line);
+  border-radius: 5px; padding: 3px 8px; cursor: pointer; flex: none; }
+.words { font: 500 .72rem var(--mono); color: var(--muted); }
+
+/* tables */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .88rem; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 .72rem var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+ul.notes { padding-left: 1.1rem; max-width: 70ch; } ul.notes li { margin: 6px 0; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 8px 32px; }
+.cols > * { min-width: 0; }
+
+@media (max-width: 640px) {
+  .row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .rail { grid-auto-flow: column; justify-content: start; align-items: center; gap: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .row { transition: none; } }
+</style>
+<div class="wrap">
+  <div class="eyebrow">A4I 2026 · Challenge 1 · Brooklyn · Pitch video</div>
+  <h1>HeatRx: three-minute video script</h1>
+  <p class="lede">One planning assistant for three tracks: <b>Today</b>, <b>This budget cycle</b> and <b>This decade</b>.
+    Mixed on-camera segments and screen recordings with voice-over. Judges score the video with no follow-up
+    questions, so every answer they look for is said out loud.</p>
+  <div class="stripe" role="img" aria-label="Heat offset colour scale, cooler to warmer"></div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="controls">
+    <div>
+      <div class="eyebrow" style="margin-bottom:6px">Speaking pace</div>
+      <div class="seg" id="pace" role="group" aria-label="Speaking pace">
+        <button type="button" id="pace-140" data-wpm="140">Slow · 140</button>
+        <button type="button" id="pace-150" data-wpm="150" aria-pressed="true">Normal · 150</button>
+        <button type="button" id="pace-160" data-wpm="160">Brisk · 160</button>
+      </div>
+    </div>
+    <div>
+      <div class="eyebrow" style="margin-bottom:6px">Show my lines</div>
+      <div class="chips" id="speakers" role="group" aria-label="Highlight one speaker"></div>
+    </div>
+  </div>
+
+  <div class="timeline" id="timeline" aria-label="Timeline of the video by speaker"></div>
+  <div class="ticks"><span>0:00</span><span>0:30</span><span>1:00</span><span>1:30</span><span>2:00</span><span>2:30</span><span>3:00</span></div>
+
+  <div class="script" id="script"></div>
+
+  <h2>Where each judging question is answered</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Judges look for</th><th>Segment</th></tr></thead>
+    <tbody id="coverage"></tbody>
+  </table></div>
+
+  <h2>Numbers in the script, and where they come from</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Said on screen</th><th>Value</th><th>Source</th></tr></thead>
+    <tbody>
+      <tr><td>Sensor readings on one afternoon</td><td class="num">85.4–95.4°F</td><td>NOAA Heat Watch, Brooklyn campaign (<span class="mono">a4i_grid.cell_readings</span>)</td></tr>
+      <tr><td>Readings → measured blocks</td><td class="num">15,105 → 1,020</td><td><span class="mono">cell_readings</span>, <span class="mono">cell_heat</span> (5+ readings per block)</td></tr>
+      <tr><td>Days ≥ 90°F, Brooklyn average</td><td class="num">15 / yr</td><td>Heat history view: Central Park, LaGuardia, JFK, 2019–2025</td></tr>
+      <tr><td>Days ≥ 90°F, Rugby–Remsen Village</td><td class="num">19.8 / yr</td><td>Heat history view, per-block estimate (offset held constant)</td></tr>
+      <tr><td>Dead trees and stumps in the hottest quarter</td><td class="num">1,850</td><td>Decade view: 844 dead, 1,006 stumps, 2015 tree census</td></tr>
+      <tr><td>Model effect of 10 more mature trees</td><td class="num">−0.27°F</td><td>Decade view, <span class="mono">heat_offset_v1</span> coefficients (association)</td></tr>
+      <tr><td>Today top 25: households without a car</td><td class="num">74.4% vs 54.8%</td><td>Equity audit view, resident-weighted</td></tr>
+      <tr><td>Today top 25: poverty rate</td><td class="num">30.9% vs 20.0%</td><td>Equity audit view</td></tr>
+      <tr><td>Today top 25: aged 65+</td><td class="num">12.0% vs 13.2%</td><td>Equity audit view</td></tr>
+      <tr><td>Model error, 5-fold block cross-validation</td><td class="num">0.82°F vs 1.04°F</td><td><span class="mono">sql/model/cross_validate.sh</span>, R² 0.32</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted" style="font-size:.82rem">Numbers as of 17 November 2026. If anyone rebuilds the grid or retrains the model, re-read them from the portal before recording.</p>
+
+  <h2>Production notes</h2>
+  <div class="cols">
+    <ul class="notes">
+      <li><b>Record each segment separately</b> and cut them together. Phone at eye level and a quiet room are enough for the on-camera parts.</li>
+      <li><b>Use the deployed portal</b>, not localhost, so the address bar shows Cloud Run.</li>
+      <li><b>Caption the numbers</b> as they're spoken: 74% vs 55%, 0.82°F vs 1.04°F, 15 vs 20 days.</li>
+    </ul>
+    <ul class="notes">
+      <li><b>Agent segment:</b> rehearse both prompts and record several takes. Gemini's wording changes run to run, so the voice-over describes what the agent does, never its exact reply. Keep a screenshot of a good run as a fallback.</li>
+      <li><b>Timing:</b> the spoken words run about 2:42 at a normal pace. The striped end of the timeline is the time left for typing, clicks and pauses. If a pace pushes past 3:00, the total turns red.</li>
+    </ul>
+  </div>
+</div>
+<script>
+const SEGMENTS = [{"who": "LEAD", "shot": "camera", "track": "", "visual": "Team lead on camera.", "direction": "", "say": "Heat kills more Americans than any other weather, and it doesn't hit evenly. On one July afternoon in Brooklyn, NOAA's volunteer sensors read temperatures ten degrees apart: same hour, same borough."}, {"who": "LEAD", "shot": "camera", "track": "", "visual": "Team lead on camera.", "direction": "", "say": "So we built HeatRx, one planning assistant for all three clocks a city runs on. Today: where trucks go before a heat wave. This budget cycle: where permanent cooling centers belong. This decade: where trees buy relief. Our users are city staff, so it's an internal portal on Cloud Run, built around a map."}, {"who": "DATA", "shot": "screen", "track": "", "visual": "Portal map, default heat layer.", "direction": "Start zoomed out on Brooklyn. Pick Thursday in the forecast strip and let the colours update.", "say": "Every square is a block about a hundred metres across. Fifteen thousand Heat Watch readings became a thousand measured blocks, and our BigQuery ML model predicts the rest: how much hotter each block runs than the city average. Add Thursday's National Weather Service high, and every block gets its own estimate. Grey means nothing was measured nearby, so we don't guess."}, {"who": "AGENT", "shot": "screen", "track": "today", "visual": "Assistant tab.", "direction": "Type prompt 1 and cut the wait in editing. Click marker 1 and ask why. Then type prompt 2.", "prompts": ["Two wellness teams, six hours. Which blocks in Crown Heights North are hottest, with the most residents over 65 and households without a car?", "What about Staten Island?"], "say": "Today. A wellness team needs the hottest blocks with the most seniors and car-free households. The agent, built with Google's ADK on Gemini, answers through Google's managed BigQuery MCP server and tools we wrote, and puts the shortlist on the map. Ask why a block is hot, and it runs ML.EXPLAIN_PREDICT live. Ask about Staten Island, and it says it has no data."}, {"who": "STORY", "shot": "screen", "track": "budget", "visual": "Heat history view.", "direction": "Show the city chart, then scroll to the neighbourhood table and highlight Rugby–Remsen Village.", "say": "This budget cycle. A cooling center is permanent, so it belongs where heat keeps coming back. Brooklyn averages fifteen days a year above ninety degrees. Rugby–Remsen Village gets about twenty. That turns a heat map into a budget argument."}, {"who": "UI", "shot": "screen", "track": "decade", "visual": "Decade view.", "direction": "Show the 1,850 headline, then the planting-priority list on the map.", "say": "This decade. The hottest quarter of blocks holds eighteen hundred and fifty dead trees and stumps: planting sites ready now. But the model credits ten more street trees with only a quarter of a degree, and that's an association. So we say where to plant, then measure before and after."}, {"who": "STORY", "shot": "screen", "track": "", "visual": "Equity audit view.", "direction": "Highlight the Today list column, then the Aged 65+ row.", "say": "We kept race and demographics out of the model, then audited its output. Today's top twenty-five blocks: seventy-four percent car-free households against fifty-five across Brooklyn, and poverty thirty-one percent against twenty. But slightly fewer seniors, so our ranking needs more weight on age."}, {"who": "DATA", "shot": "screen", "track": "", "visual": "Model card in the map legend.", "direction": "", "say": "We tested on whole one-kilometre areas, held out five ways. Typical error: point eight two degrees, against one point oh four for every block is average. Trees and EPA data alone barely help."}, {"who": "LEAD", "shot": "camera", "track": "", "visual": "Team lead on camera.", "direction": "", "say": "Limits: one afternoon of data, association not cause, and much of Brooklyn unmeasured. Next: truck routing, verified cooling-center hours, and a second drive. HeatRx: the right help, on the right block."}];
+const SPEAKERS = {
+  LEAD: { name: "Team lead", color: "--lead" },
+  DATA: { name: "Data lane", color: "--data" },
+  AGENT: { name: "Agent lane", color: "--agent" },
+  STORY: { name: "Story lane", color: "--story" },
+  UI: { name: "Front-end lane", color: "--ui" },
+};
+const TRACKS = { today: "⚡ Today", budget: "🏛️ Budget cycle", decade: "🌳 Decade" };
+const COVERAGE = [
+  ["Which tracks, said early", [1]],
+  ["Who the user is, and why this interface", [1]],
+  ["Deployed on Google Cloud (Cloud Run)", [1]],
+  ["ADK + Gemini, a managed MCP server, a tool we built", [3]],
+  ["The agent calls BigQuery ML (ML.EXPLAIN_PREDICT)", [3]],
+  ["Refuses when there's no data", [3]],
+  ["Budget cycle: frequency of dangerous heat, not just a map", [4]],
+  ["Decade: where to intervene, and no simulated fix", [5]],
+  ["Race kept out of the model; equity audit with numbers", [6]],
+  ["Validation on held-out areas", [7]],
+  ["Limitations", [5, 8]],
+];
+const LIMIT = 180;
+const state = { wpm: 150, who: null };
+
+const words = (s) => s.split(/\s+/).filter(Boolean).length;
+const fmt = (sec) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, "0")}`.replace(/:60$/, ":59");
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const color = (who) => `var(${SPEAKERS[who].color})`;
+
+function timings() {
+  let t = 0;
+  return SEGMENTS.map((s) => {
+    const d = (words(s.say) / state.wpm) * 60;
+    const out = { start: t, dur: d };
+    t += d;
+    return out;
+  });
+}
+
+function render() {
+  const times = timings();
+  const total = times.at(-1).start + times.at(-1).dur;
+  const totalWords = SEGMENTS.reduce((n, s) => n + words(s.say), 0);
+  const spare = LIMIT - total;
+
+  document.getElementById("stats").innerHTML = `
+    <div class="stat ${total > LIMIT ? "over" : ""}"><b>${fmt(total)}</b><span>spoken, at ${state.wpm} words/min</span></div>
+    <div class="stat"><b>${spare >= 0 ? fmt(spare) : "−" + fmt(-spare)}</b><span>left for clicks and pauses</span></div>
+    <div class="stat"><b>${totalWords}</b><span>spoken words</span></div>
+    <div class="stat"><b>${SEGMENTS.length}</b><span>segments, ${Object.keys(SPEAKERS).length} voices</span></div>`;
+
+  const scale = Math.max(LIMIT, total);
+  document.getElementById("timeline").innerHTML =
+    SEGMENTS.map((s, i) => `<div class="blk ${state.who && state.who !== s.who ? "dim" : ""}"
+      title="${fmt(times[i].start)} · ${SPEAKERS[s.who].name}"
+      style="width:${(times[i].dur / scale) * 100}%;background:${color(s.who)}"></div>`).join("") +
+    (total < LIMIT ? `<div class="blk pause" title="Time left for clicks and pauses" style="width:${((LIMIT - total) / scale) * 100}%"></div>` : "");
+
+  document.getElementById("script").innerHTML = SEGMENTS.map((s, i) => {
+    const t = times[i];
+    return `<article class="row ${state.who && state.who !== s.who ? "dim" : ""}" id="seg-${i + 1}">
+      <div class="rail">
+        <span class="tc">${fmt(t.start)}–${fmt(t.start + t.dur)}</span>
+        <span class="who"><span class="dot" style="background:${color(s.who)}"></span>${SPEAKERS[s.who].name}</span>
+        <span class="tag">${s.shot === "camera" ? "On camera" : "Screen + voice-over"}</span>
+        ${s.track ? `<span class="tag ${s.track}">${TRACKS[s.track]}</span>` : ""}
+      </div>
+      <div style="min-width:0">
+        <p class="visual"><b>${esc(s.visual)}</b>${s.direction ? " " + esc(s.direction) : ""}</p>
+        <p class="say">${esc(s.say)}</p>
+        ${s.prompts ? `<div class="prompts">${s.prompts.map((p, k) => `
+          <div class="prompt"><code>${k + 1}. ${esc(p)}</code>
+          <button type="button" class="copy" id="copy-${i}-${k}" data-text="${esc(p)}">Copy</button></div>`).join("")}</div>` : ""}
+        <div class="words" style="margin-top:8px">${words(s.say)} words · ${Math.round(t.dur)} s</div>
+      </div>
+    </article>`;
+  }).join("");
+
+  document.getElementById("coverage").innerHTML = COVERAGE.map(([what, segs]) =>
+    `<tr><td>${what}</td><td class="num">${segs.map((n) => `<a href="#seg-${n + 1}">${fmt(times[n].start)}</a>`).join(", ")}</td></tr>`).join("");
+
+  document.querySelectorAll("#pace button").forEach((b) =>
+    b.setAttribute("aria-pressed", String(Number(b.dataset.wpm) === state.wpm)));
+  document.querySelectorAll("#speakers .chip").forEach((b) =>
+    b.setAttribute("aria-pressed", String(b.dataset.who === state.who)));
+}
+
+document.getElementById("speakers").innerHTML = Object.entries(SPEAKERS).map(([k, v]) =>
+  `<button type="button" class="chip" id="who-${k.toLowerCase()}" data-who="${k}" aria-pressed="false">
+    <span class="dot" style="background:var(${v.color})"></span>${v.name}</button>`).join("");
+
+document.getElementById("pace").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  state.wpm = Number(b.dataset.wpm); render();
+});
+document.getElementById("speakers").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  state.who = state.who === b.dataset.who ? null : b.dataset.who; render();
+});
+document.getElementById("script").addEventListener("click", async (e) => {
+  const b = e.target.closest(".copy"); if (!b) return;
+  try { await navigator.clipboard.writeText(b.dataset.text); b.textContent = "Copied"; }
+  catch { const r = document.createRange(); r.selectNodeContents(b.previousElementSibling);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); b.textContent = "Selected"; }
+  setTimeout(() => { b.textContent = "Copy"; }, 1500);
+});
+
+render();
+</script>
